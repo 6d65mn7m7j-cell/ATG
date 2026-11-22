@@ -33,11 +33,12 @@ from valuebet.finder import FinderConfig, ValueBet, find_value_bets  # noqa: E40
 from valuebet.providers import SPORT_MARKETS, SPORTS, SampleProvider  # noqa: E402
 
 API = "https://api.the-odds-api.com/v4"
+TR = timezone(timedelta(hours=3))  # günlük bütçe Türkiye gününe göre sıfırlanır
 SPORT_NAMES = {"nba": "NBA", "nhl": "NHL", "euroleague": "EuroLeague", "nfl": "NFL", "ufc": "UFC/MMA"}
 DEFAULT_CONFIG: dict[str, Any] = {
     "sports": ["nba", "nhl", "euroleague", "nfl", "ufc"],
     "regions": "eu",
-    "hours_ahead": 14,
+    "hours_ahead": 8,
     "min_edge": 0.03,
     "max_edge": 0.25,
     "min_odds": 1.3,
@@ -46,7 +47,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "bankroll": 1000,
     "kelly_multiplier": 0.25,
     "max_items": 8,
-    "min_remaining_quota": 60,
+    "min_remaining_quota": 100,
+    "daily_budget": 10,
     "notify_when_empty": False,
     "app_url": "https://6d65mn7m7j-cell.github.io/ATG/",
 }
@@ -183,9 +185,14 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_config(Path(args.config))
     state_path = Path(args.state)
     try:
-        seen: dict[str, str] = json.loads(state_path.read_text()) if state_path.exists() else {}
+        raw = json.loads(state_path.read_text()) if state_path.exists() else {}
     except (json.JSONDecodeError, OSError):
-        seen = {}
+        raw = {}
+    # Durum: {"seen": {bahis: başlama}, "usage": {"date": "YYYY-MM-DD", "used": n, "warned": bool}}
+    # (eski sürüm yalnızca seen sözlüğünü düz olarak tutuyordu)
+    seen: dict[str, str] = raw.get("seen", {}) if "seen" in raw or "usage" in raw else raw
+    today = datetime.now(TR).strftime("%Y-%m-%d")
+    usage = raw.get("usage") if isinstance(raw.get("usage"), dict) and raw["usage"].get("date") == today else {"date": today, "used": 0}
 
     finder = FinderConfig(
         min_edge=cfg["min_edge"], max_edge=cfg["max_edge"], min_odds=cfg["min_odds"], max_odds=cfg["max_odds"],
@@ -204,21 +211,32 @@ def main(argv: list[str] | None = None) -> int:
             print("ODDS_API_KEY tanımlı değil; tarama atlandı.")
             return 0
         client = OddsClient(key)
+        # Maçı olan ligleri ücretsiz /events ile bul; en yakın maçı olan lig önce taranır.
+        queue = []
         for sport in cfg["sports"]:
             events = client.events(sport, now, end)
             if not events:
                 print(f"{SPORT_NAMES[sport]}: önümüzdeki {cfg['hours_ahead']} saatte maç yok, istek harcanmadı.")
+            else:
+                queue.append((min(e["commence_time"] for e in events), sport))
+        for _, sport in sorted(queue):
+            cost = len(SPORT_MARKETS.get(sport, ("h2h", "spreads", "totals"))) * len(cfg["regions"].split(","))
+            if usage["used"] + cost > cfg["daily_budget"]:
+                print(f"{SPORT_NAMES[sport]}: günlük bütçe doldu ({usage['used']}/{cfg['daily_budget']} istek), atlandı.")
                 continue
             if client.remaining is not None and client.remaining < cfg["min_remaining_quota"]:
                 print(f"Kota düşük ({client.remaining}); {SPORT_NAMES[sport]} atlandı.")
                 continue
+            before = client.used_now
             odds = client.odds(sport, cfg["regions"], now, end)
+            usage["used"] += client.used_now - before
             bets = find_value_bets(odds, finder)
             print(f"{SPORT_NAMES[sport]}: {len(odds)} maç, {len(bets)} değerli bahis")
             found += [(sport, b) for b in bets]
 
     new = [(s, b) for s, b in found if bet_key(b) not in seen]
-    print(f"Toplam {len(found)} değerli bahis, {len(new)} yeni. Bu çalışmada harcanan istek: {client.used_now if client else 0}")
+    print(f"Toplam {len(found)} değerli bahis, {len(new)} yeni. Bu çalışmada harcanan istek: {client.used_now if client else 0}"
+          f" · bugün toplam {usage['used']}/{cfg['daily_budget']}")
 
     remaining = client.remaining if client else None
     payload = None
@@ -226,7 +244,8 @@ def main(argv: list[str] | None = None) -> int:
         payload = format_message(new, cfg, remaining)
     elif cfg["notify_when_empty"]:
         payload = {"title": "Değerli bahis yok", "message": f"Kalan API isteği: {remaining}", "tags": ["zzz"], "priority": 2, "click": cfg["app_url"]}
-    if remaining is not None and remaining < cfg["min_remaining_quota"]:
+    if remaining is not None and remaining < cfg["min_remaining_quota"] and not usage.get("warned"):
+        usage["warned"] = True  # günde en fazla bir uyarı
         warn = f"\n⚠️ API kotası azaldı: {remaining} istek kaldı."
         payload = payload or {"title": "API kotası azaldı", "message": "", "tags": ["warning"], "priority": 3, "click": cfg["app_url"]}
         payload["message"] += warn
@@ -245,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         for s, b in new:
             seen[bet_key(b)] = b.commence_time
         seen = {k: v for k, v in seen.items() if v > iso(now - timedelta(hours=6))}
-        state_path.write_text(json.dumps(seen))
+        state_path.write_text(json.dumps({"seen": seen, "usage": usage}))
     return 0
 
 

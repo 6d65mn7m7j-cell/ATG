@@ -30,12 +30,12 @@ Uygulamadaki **Kayıt** sekmesi: değerli bahisleri (ayrıntıda "Kayda ekle") v
 
 ## Zamanlanmış tarama ve bildirim
 
-`.github/workflows/scan.yml` her gün 18:07 (TR) `scripts/scan_notify.py`'yi çalıştırır; değerli bahis bulursa [ntfy](https://ntfy.sh) ile telefona bildirim gönderir. Aynı bahis iki kez bildirilmez.
+`.github/workflows/scan.yml` her gün 13:07, 19:07 ve 01:07'de (TR) `scripts/scan_notify.py`'yi çalıştırır (her biri önümüzdeki 8 saati tarar); değerli bahis bulursa [ntfy](https://ntfy.sh) ile telefona bildirim gönderir. Aynı bahis iki kez bildirilmez.
 
 - Gerekli repo gizli değerleri (Settings → Secrets and variables → Actions): `ODDS_API_KEY` ve en az bir kanal: `NTFY_TOPIC` ve/veya `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`.
 - Deneme: Actions → "Değerli bahis taraması" → Run workflow → test kutusu (oran isteği yapılmaz).
 - Ayarlar `notify.json`'da: ligler, bölge (`eu` = lig başına 3 istek), kaç saat ilerisi, en düşük EV, oran aralığı, şirket filtresi, kota alt sınırı.
-- Kota: maç listesi ücretsiz `/events` uç noktasından alınır; önümüzdeki saatlerde maçı olmayan lige istek harcanmaz. Kabaca ayda ~250 istek.
+- Kota: maç listesi ücretsiz `/events` uç noktasından alınır; önümüzdeki saatlerde maçı olmayan lige istek harcanmaz. `daily_budget` (varsayılan günde 10 istek ≈ ayda 300) aşılacaksa o günün kalan taramaları atlanır; en yakın maçı olan lig önce taranır. Kota `min_remaining_quota`'nın (100) altına düşerse tarama durur ve günde bir uyarı gönderilir.
 - Elle çalıştırma: Actions → "Değerli bahis taraması" → Run workflow. Yerel deneme: `python scripts/scan_notify.py --demo --dry-run`.
 
 **NHL notu:** Bazı Avrupa şirketleri hokey alt/üst ve handikabını uzatmasız fiyatlar; Pinnacle uzatmayı sayar. Karışmasın diye hokeyde handikap/toplam yalnızca uzatmayı saydığı bilinen şirketler arasında karşılaştırılır (`HOCKEY_OT_BOOKS`).

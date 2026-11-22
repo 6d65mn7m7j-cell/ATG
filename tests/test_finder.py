@@ -173,3 +173,47 @@ def test_scan_notify_test_flag_requires_topic(monkeypatch):
     monkeypatch.setattr(mod, "send_telegram", lambda payload, token, chat: tg.update(chat=chat, title=payload["title"]))
     assert mod.main(["--test-notify"]) == 0 and tg["chat"] == "1"
     assert mod._html("a<b>&") == "a&lt;b&gt;&amp;"
+
+
+def test_scan_notify_daily_budget(tmp_path, monkeypatch, capsys):
+    import importlib.util
+    import json
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("scan_notify3", Path(__file__).parent.parent / "scripts" / "scan_notify.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    soon = lambda h: (datetime.now(timezone.utc) + timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    starts = {"nba": soon(5), "nhl": soon(2), "nfl": soon(7)}
+    calls = []
+
+    class FakeClient:
+        def __init__(self, key):
+            self.remaining, self.used_now = 400, 0
+
+        def events(self, sport, start, end):
+            return [{"commence_time": starts[sport]}] if sport in starts else []
+
+        def odds(self, sport, regions, start, end):
+            calls.append(sport)
+            self.used_now += 3
+            return []
+
+    monkeypatch.setattr(mod, "OddsClient", FakeClient)
+    monkeypatch.setenv("ODDS_API_KEY", "x")
+    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"daily_budget": 7}))
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps({"eski|bahis": soon(3)}))  # eski düz biçim okunabilmeli
+
+    assert mod.main(["--config", str(cfg), "--state", str(state)]) == 0
+    assert calls == ["nhl", "nba"]  # en yakın maç önce; NFL bütçeye sığmaz
+    st = json.loads(state.read_text())
+    assert st["usage"]["used"] == 6 and "eski|bahis" in st["seen"]
+    calls.clear()
+    mod.main(["--config", str(cfg), "--state", str(state)])  # aynı gün ikinci çalıştırma
+    assert calls == []
+    assert "günlük bütçe doldu" in capsys.readouterr().out

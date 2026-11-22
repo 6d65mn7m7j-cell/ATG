@@ -2,9 +2,11 @@ name: Değerli bahis taraması
 
 on:
   schedule:
-    # Her gün 15:07 UTC = 18:07 Türkiye. Önümüzdeki 14 saati tarar (EuroLeague akşam maçları,
-    # NFL pazar maçları, NBA/NHL gece maçları). Kotayı korumak için tek çalıştırma.
-    - cron: "7 15 * * *"
+    # Günde 3 tarama (Türkiye saati 13:07, 19:07, 01:07); her biri önümüzdeki 8 saati kapsar.
+    # Kotayı notify.json'daki daily_budget sınırlar (varsayılan günde 10 istek ≈ ayda 300).
+    - cron: "7 10 * * *"
+    - cron: "7 16 * * *"
+    - cron: "7 22 * * *"
   workflow_dispatch:
     inputs:
       test:
