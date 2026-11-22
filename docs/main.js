@@ -2,7 +2,7 @@ import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
   evaluateOddspapi, legFromOddspapi, kellyFraction,
-} from "./valuebet.js?v=14";
+} from "./valuebet.js?v=15";
 
 const OP_SPORTS = ["nba", "euroleague", "nfl", "nhl"]; // OddsPapi ile otomatik iddaa karşılaştırılan ligler
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
@@ -430,14 +430,23 @@ function saveAuto(x) {
 let shownCoupons = [];
 function renderCoupons(selections) {
   const box = $("#coupons");
+  const live = (auto?.rows || []).filter((x) => Date.parse(x.commence_time) > Date.now());
   if (!selections.length) {
-    box.innerHTML = `<p class="intro">Oran girdikçe MBS kuralına uygun, pozitif beklenen değerli kuponlar burada listelenir.</p>`;
+    if (settings.onlyIddaa && !auto) {
+      box.innerHTML = `<p class="intro">Önce yukarıdan <b>iddaa oranlarını getirin</b>; kuponlar değerli oranlardan kurulur.</p>`;
+    } else if (settings.onlyIddaa || auto) {
+      const best = live[0];
+      box.innerHTML = `<p class="intro"><b>Şu an kupon önerisi yok:</b> iddaa'da Pinnacle'a göre pozitif değerli oran bulunmuyor${best ? ` (en iyisi ${pct(best.edge)}, ${esc(best.label)})` : ""}. Değeri negatif oranları kombine etmek kaybı katlar; bu yüzden kupon önerilmez. Fırsatlar genelde iddaa'nın geç güncellediği anlarda (sakatlık haberleri vb.) çıkar; bildirimler bunları yakalar.</p>`;
+    } else {
+      box.innerHTML = `<p class="intro">Oran girdikçe MBS kuralına uygun, pozitif beklenen değerli kuponlar burada listelenir.</p>`;
+    }
     return;
   }
   const coupons = buildCoupons(selections, engineOptions());
   shownCoupons = coupons;
   if (!coupons.length) {
-    box.innerHTML = `<p class="intro">Girilen oranlarla MBS kuralına uyan ve eşiği (%${esc(settings.minEdge)}) geçen kupon yok. iddaa marjı yüksek olduğundan bu sık görülür.</p>`;
+    const maxMbs = Math.max(...selections.map((x) => x.mbs || 1));
+    box.innerHTML = `<p class="intro">${selections.length} pozitif değerli oran var ama MBS kuralına uyan ve eşiği (%${esc(settings.minEdge)}) geçen kupon kurulamıyor${maxMbs > 1 ? ` (MBS ${maxMbs} için en az ${maxMbs} farklı maçtan değerli oran gerekir; Ayarlar'daki varsayılan MBS'yi kontrol edin)` : ""}.</p>`;
     return;
   }
   box.innerHTML = coupons.map((c, i) => `
