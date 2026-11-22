@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NBA Value</title>
+<meta name="description" content="NBA maçları için değerli bahis bulucu">
+<meta name="theme-color" content="#11141b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NBA Value">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root {
+    --bg: #f3f4f7; --panel: #fff; --text: #14161b; --muted: #636a78; --line: #e2e5ea;
+    --accent: #e86024; --good: #0d8a4a; --good-bg: #e3f5ea; --warn: #9a5a00; --warn-bg: #fff2d9;
+    --chip: #eceff3; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0d12; --panel: #161a22; --text: #eceef2; --muted: #98a0ad; --line: #262b35;
+      --accent: #ff7a3d; --good: #4fd08a; --good-bg: #12301f; --warn: #f0b45a; --warn-bg: #36280f;
+      --chip: #20252f; --bad: #ff6b6b;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  body { padding-bottom: calc(68px + env(safe-area-inset-bottom)); }
+  header { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    padding: calc(10px + env(safe-area-inset-top)) 16px 10px; border-bottom: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; gap: 10px; }
+  h1 { font-size: 20px; margin: 0; flex: 1; letter-spacing: -.01em; }
+  h1 span { color: var(--accent); }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .iconbtn { border: 0; background: var(--panel); color: var(--text); width: 40px; height: 40px; border-radius: 12px;
+    display: grid; place-items: center; font-size: 18px; box-shadow: 0 0 0 1px var(--line) inset; }
+  .iconbtn.spin svg { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  main { padding: 12px 16px; max-width: 720px; margin: 0 auto; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .stat { background: var(--panel); border-radius: 14px; padding: 10px 12px; border: 1px solid var(--line); }
+  .stat b { display: block; font-size: 19px; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--muted); font-size: 11px; }
+  .chips { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px 12px; padding: 0 16px; scrollbar-width: none; }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip { flex: none; border: 0; padding: 7px 12px; border-radius: 99px; background: var(--chip); color: var(--text); font: inherit; font-size: 13px; }
+  .chip.on { background: var(--text); color: var(--bg); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; margin-bottom: 10px; }
+  .card .top { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+  .card .match { font-weight: 600; margin: 4px 0 8px; }
+  .card .row { display: flex; align-items: center; gap: 10px; }
+  .pick { flex: 1; min-width: 0; }
+  .pick b { display: block; font-size: 16px; }
+  .pick small { color: var(--muted); }
+  .price { text-align: right; font-variant-numeric: tabular-nums; }
+  .price b { font-size: 20px; display: block; }
+  .price small { color: var(--muted); font-size: 12px; }
+  .ev { background: var(--good-bg); color: var(--good); font-weight: 700; border-radius: 10px; padding: 6px 8px; font-size: 15px; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+  .details { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+    grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 13px; }
+  .card.open .details { display: grid; }
+  .details span { color: var(--muted); }
+  .details div { font-variant-numeric: tabular-nums; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--chip); color: var(--muted); }
+  .pill.best { background: var(--good-bg); color: var(--good); }
+  .pill.cons { background: var(--warn-bg); color: var(--warn); }
+  .empty { text-align: center; color: var(--muted); padding: 36px 12px; }
+  .empty b { display: block; color: var(--text); font-size: 17px; margin-bottom: 6px; }
+  .btn { display: block; width: 100%; border: 0; border-radius: 12px; padding: 13px; font: inherit; font-weight: 600;
+    background: var(--accent); color: #fff; margin-top: 12px; }
+  .btn.ghost { background: var(--chip); color: var(--text); }
+  .err { color: var(--bad); }
+  /* ayarlar */
+  .group { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 16px; overflow: hidden; }
+  .group h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0; padding: 12px 14px 4px; font-weight: 600; }
+  .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .group h3 + .field { border-top: 0; }
+  .field label { flex: 1; }
+  .field small { display: block; color: var(--muted); font-size: 12px; }
+  .field input[type=number], .field input[type=password], .field input[type=text], .field select {
+    font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 9px; padding: 7px 9px; width: 130px; text-align: right; }
+  .field select { width: auto; max-width: 58%; }
+  .field input.wide { width: 100%; text-align: left; }
+  .field.col { flex-direction: column; align-items: stretch; }
+  .switch { appearance: none; -webkit-appearance: none; width: 46px; height: 28px; border-radius: 99px; background: var(--chip);
+    position: relative; flex: none; transition: background .2s; box-shadow: 0 0 0 1px var(--line) inset; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+    transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .switch:checked { background: var(--good); }
+  .switch:checked::after { transform: translateX(18px); }
+  .note { font-size: 12px; color: var(--muted); padding: 0 4px 16px; }
+  nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: color-mix(in srgb, var(--panel) 92%, transparent);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
+  nav button { flex: 1; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; padding: 8px 0 6px;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  nav button svg { width: 24px; height: 24px; }
+  nav button.on { color: var(--accent); }
+  .view { display: none; }
+  .view.on { display: block; }
+  .install { background: var(--warn-bg); color: var(--warn); border-radius: 12px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>NBA <span>Value</span></h1>
+    <button id="refresh" class="iconbtn" aria-label="Oranları yenile">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+    </button>
+  </div>
+  <div class="meta" id="meta">&nbsp;</div>
+</header>
+
+<main>
+  <section id="v-bets" class="view on">
+    <div id="install" class="install" hidden>Ana ekrana eklemek için Safari'de <b>Paylaş</b> düğmesine, sonra <b>Ana Ekrana Ekle</b>'ye dokunun.</div>
+    <div class="stats" id="stats"></div>
+    <div class="chips" id="mchips"></div>
+    <div id="list"></div>
+  </section>
+
+  <section id="v-settings" class="view">
+    <div class="group">
+      <h3>Veri kaynağı</h3>
+      <div class="field col">
+        <label for="apiKey">The Odds API anahtarı<small>Yalnızca bu cihazda saklanır. the-odds-api.com'dan ücretsiz alınır.</small></label>
+        <input id="apiKey" class="wide" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Anahtarınızı yapıştırın">
+      </div>
+      <div class="field">
+        <label for="demo">Demo verisi<small>Anahtar olmadan dene</small></label>
+        <input id="demo" class="switch" type="checkbox">
+      </div>
+      <div class="field">
+        <label for="regions">Bölgeler<small>Pinnacle için "eu" gerekli</small></label>
+        <select id="regions">
+          <option value="us,eu">ABD + Avrupa</option>
+          <option value="eu">Avrupa</option>
+          <option value="us">ABD</option>
+          <option value="uk,eu">İngiltere + Avrupa</option>
+          <option value="us,uk,eu,au">Tümü (2× kota)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>Değer hesabı</h3>
+      <div class="field"><label for="minEdge">En düşük EV (%)</label><input id="minEdge" type="number" inputmode="decimal" step="0.5"></div>
+      <div class="field">
+        <label for="reference">Referans</label>
+        <select id="reference"><option value="sharp">Pinnacle (keskin)</option><option value="consensus">Piyasa konsensüsü</option></select>
+      </div>
+      <div class="field">
+        <label for="devigMethod">Marj temizleme</label>
+        <select id="devigMethod"><option value="power">Power</option><option value="shin">Shin</option><option value="multiplicative">Çarpımsal</option><option value="additive">Toplamsal</option></select>
+      </div>
+      <div class="field"><label for="minOdds">En düşük oran</label><input id="minOdds" type="number" inputmode="decimal" step="0.05"></div>
+      <div class="field"><label for="maxOdds">En yüksek oran</label><input id="maxOdds" type="number" inputmode="decimal" step="0.5"></div>
+    </div>
+
+    <div class="group">
+      <h3>Kasa yönetimi</h3>
+      <div class="field"><label for="bankroll">Kasa</label><input id="bankroll" type="number" inputmode="decimal" step="50"></div>
+      <div class="field">
+        <label for="kellyMultiplier">Kelly çarpanı</label>
+        <select id="kellyMultiplier"><option value="0.1">%10 Kelly</option><option value="0.25">Çeyrek Kelly</option><option value="0.5">Yarım Kelly</option><option value="1">Tam Kelly</option></select>
+      </div>
+      <div class="field"><label for="maxStakePct">Tek bahiste en fazla (%)</label><input id="maxStakePct" type="number" inputmode="decimal" step="0.5"></div>
+    </div>
+
+    <div class="group" id="booksGroup">
+      <h3>Bahis şirketlerim</h3>
+      <div class="field"><label><small>Hiçbiri seçili değilse tüm şirketler gösterilir. Liste ilk taramadan sonra dolar.</small></label></div>
+    </div>
+
+    <p class="note">Oranlar hızla değişir; bahisten önce oranı şirkette doğrulayın. +EV uzun vadeli bir avantajdır, tekil bahislerde kayıp olağandır. Yalnızca ülkenizde yasal ve lisanslı kanalları kullanın; 18 yaş altıysanız oynamayın.</p>
+  </section>
+</main>
+
+<nav>
+  <button data-view="v-bets" class="on">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>Bahisler
+  </button>
+  <button data-view="v-settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Ayarlar
+  </button>
+</nav>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

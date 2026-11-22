@@ -11,6 +11,15 @@ NBA maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif 
 4. **Stake** — Kelly kriteri × seçilen çarpan (varsayılan çeyrek Kelly), tek bahiste kasanın en fazla %3'ü.
 5. Handikap ve toplam marketlerinde yalnızca **aynı çizgideki** (ör. -4.5 ile -4.5) teklifler karşılaştırılır.
 
+## iPhone uygulaması (PWA)
+
+`docs/` klasörü sunucu gerektirmeyen, tamamen telefonda çalışan bir web uygulamasıdır. Oranları doğrudan The Odds API'den çeker, hesaplamayı cihazda yapar (motor: `docs/valuebet.js`, Python motoruyla birebir aynı sonuçları verdiği testlerle doğrulanır). API anahtarı yalnızca cihazın tarayıcı deposunda tutulur.
+
+- Yayınlama: GitHub → Settings → Pages → *Deploy from a branch* → dal ve `/docs` klasörü.
+- iPhone'a ekleme: Safari'de sayfayı açın → **Paylaş** → **Ana Ekrana Ekle**.
+- Ayarlar değiştirildiğinde yeniden API isteği yapılmaz; son çekilen oranlar üzerinden yeniden hesaplanır (kota dostu).
+- Yerelde deneme: `python -m http.server -d docs 8080`
+
 ## Kurulum
 
 ```bash
