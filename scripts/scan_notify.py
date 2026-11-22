@@ -129,6 +129,36 @@ def send_ntfy(payload: dict[str, Any], topic: str, server: str) -> None:
     r.raise_for_status()
 
 
+def send_telegram(payload: dict[str, Any], token: str, chat_id: str) -> None:
+    text = f"<b>{_html(payload['title'])}</b>\n{_html(payload['message'])}\n\n<a href=\"{payload['click']}\">Uygulamayı aç</a>"
+    r = httpx.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        json={"chat_id": chat_id, "text": text[:4000], "parse_mode": "HTML", "disable_web_page_preview": True},
+        timeout=15,
+    )
+    if r.status_code != 200:
+        # Yanıtta anahtar yer almaz; yalnızca Telegram'ın hata açıklaması yazdırılır.
+        raise SystemExit(f"Telegram hata verdi ({r.status_code}): {r.json().get('description', '')}")
+
+
+def _html(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def notify(payload: dict[str, Any]) -> list[str]:
+    """Tanımlı tüm kanallara gönderir (ntfy ve/veya Telegram); gönderilen kanalların adlarını döndürür."""
+    sent = []
+    topic = os.environ.get("NTFY_TOPIC", "").strip()
+    if topic:
+        send_ntfy(payload, topic, os.environ.get("NTFY_SERVER", "https://ntfy.sh"))
+        sent.append("ntfy")
+    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip(), os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if token and chat:
+        send_telegram(payload, token, chat)
+        sent.append("Telegram")
+    return sent
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Değerli bahis taraması + ntfy bildirimi")
     ap.add_argument("--config", default=str(ROOT / "notify.json"))
@@ -139,17 +169,15 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     if args.test_notify:
-        topic = os.environ.get("NTFY_TOPIC", "").strip()
-        if not topic:
-            print("NTFY_TOPIC tanımlı değil; deneme bildirimi gönderilemedi.")
-            return 1
         cfg = load_config(Path(args.config))
-        send_ntfy(
+        sent = notify(
             {"title": "Deneme bildirimi ✅", "message": "Bağlantı çalışıyor. Değerli bahis bulunduğunda bildirimler buraya gelecek.",
-             "tags": ["white_check_mark"], "priority": 3, "click": cfg["app_url"]},
-            topic, os.environ.get("NTFY_SERVER", "https://ntfy.sh"),
+             "tags": ["white_check_mark"], "priority": 4, "click": cfg["app_url"]},
         )
-        print("Deneme bildirimi gönderildi.")
+        if not sent:
+            print("Bildirim kanalı tanımlı değil (NTFY_TOPIC ya da TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID).")
+            return 1
+        print(f"Deneme bildirimi gönderildi: {', '.join(sent)}")
         return 0
 
     cfg = load_config(Path(args.config))
@@ -209,12 +237,8 @@ def main(argv: list[str] | None = None) -> int:
             print(payload["title"])
             print(payload["message"])
         else:
-            topic = os.environ.get("NTFY_TOPIC", "").strip()
-            if not topic:
-                print("NTFY_TOPIC tanımlı değil; bildirim gönderilmedi.")
-            else:
-                send_ntfy(payload, topic, os.environ.get("NTFY_SERVER", "https://ntfy.sh"))
-                print("Bildirim gönderildi.")
+            sent = notify(payload)
+            print(f"Bildirim gönderildi: {', '.join(sent)}" if sent else "Bildirim kanalı tanımlı değil; gönderilmedi.")
 
     if not args.dry_run:
         # Başlamış maçların kayıtlarını at, yenileri ekle.

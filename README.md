@@ -32,7 +32,8 @@ Uygulamadaki **Kayıt** sekmesi: değerli bahisleri (ayrıntıda "Kayda ekle") v
 
 `.github/workflows/scan.yml` her gün 18:07 (TR) `scripts/scan_notify.py`'yi çalıştırır; değerli bahis bulursa [ntfy](https://ntfy.sh) ile telefona bildirim gönderir. Aynı bahis iki kez bildirilmez.
 
-- Gerekli repo gizli değerleri (Settings → Secrets and variables → Actions): `ODDS_API_KEY`, `NTFY_TOPIC`.
+- Gerekli repo gizli değerleri (Settings → Secrets and variables → Actions): `ODDS_API_KEY` ve en az bir kanal: `NTFY_TOPIC` ve/veya `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`.
+- Deneme: Actions → "Değerli bahis taraması" → Run workflow → test kutusu (oran isteği yapılmaz).
 - Ayarlar `notify.json`'da: ligler, bölge (`eu` = lig başına 3 istek), kaç saat ilerisi, en düşük EV, oran aralığı, şirket filtresi, kota alt sınırı.
 - Kota: maç listesi ücretsiz `/events` uç noktasından alınır; önümüzdeki saatlerde maçı olmayan lige istek harcanmaz. Kabaca ayda ~250 istek.
 - Elle çalıştırma: Actions → "Değerli bahis taraması" → Run workflow. Yerel deneme: `python scripts/scan_notify.py --demo --dry-run`.

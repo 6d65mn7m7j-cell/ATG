@@ -166,3 +166,10 @@ def test_scan_notify_test_flag_requires_topic(monkeypatch):
     monkeypatch.setattr(mod, "send_ntfy", lambda payload, topic, server: sent.update(payload=payload, topic=topic))
     assert mod.main(["--test-notify"]) == 0
     assert sent["topic"] == "t" and "Deneme" in sent["payload"]["title"]
+    # Telegram: ntfy olmadan da çalışır
+    monkeypatch.delenv("NTFY_TOPIC")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "x"); monkeypatch.setenv("TELEGRAM_CHAT_ID", "1")
+    tg = {}
+    monkeypatch.setattr(mod, "send_telegram", lambda payload, token, chat: tg.update(chat=chat, title=payload["title"]))
+    assert mod.main(["--test-notify"]) == 0 and tg["chat"] == "1"
+    assert mod._html("a<b>&") == "a&lt;b&gt;&amp;"
