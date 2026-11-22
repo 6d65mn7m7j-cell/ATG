@@ -2,8 +2,9 @@ import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
   evaluateOddspapi, legFromOddspapi, kellyFraction,
-} from "./valuebet.js?v=12";
+} from "./valuebet.js?v=13";
 
+const OP_SPORTS = ["nba", "euroleague", "nfl", "nhl"]; // OddsPapi ile otomatik iddaa karşılaştırılan ligler
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
 const ALL_MARKETS = ["h2h", "spreads", "totals"];
 const marketsOf = (sport) => SPORTS[sport].markets || ALL_MARKETS;
@@ -155,9 +156,11 @@ function render() {
     meta.push(ago(snapshot.fetchedAt));
     if (snapshot.quota?.remaining) meta.push(`kalan istek: ${snapshot.quota.remaining}`);
   }
-  $("#meta").textContent = meta.join(" · ") || "Henüz tarama yapılmadı";
+  $("#meta").textContent = settings.onlyIddaa
+    ? (auto ? `iddaa oranları · ${ago(auto.fetchedAt)}` : "iddaa oranları henüz getirilmedi")
+    : meta.join(" · ") || "Henüz tarama yapılmadı";
   $("#sportName").textContent = SPORTS[settings.sport].name;
-  $("#sports").innerHTML = Object.values(SPORTS).map((x) => `<button class="chip ${x.id === settings.sport ? "on" : ""}" data-sport="${x.id}">${x.name}</button>`).join("");
+  $("#sports").innerHTML = Object.values(SPORTS).filter((x) => !settings.onlyIddaa || OP_SPORTS.includes(x.id)).map((x) => `<button class="chip ${x.id === settings.sport ? "on" : ""}" data-sport="${x.id}">${x.name}</button>`).join("");
 
   const avail = marketsOf(settings.sport);
   const chips = avail.length > 1 ? [["all", "Tümü"], ["h2h", "Maç Sonucu"], ["spreads", "Handikap"], ["totals", "Toplam"]] : [];
@@ -306,7 +309,7 @@ function updateIddaa() {
   const autoRows = (auto?.rows || []).filter((x) => Date.parse(x.commence_time) > Date.now() && x.edge > 0);
   const autoMatches = new Set(autoRows.map((x) => x.match));
   all.push(...autoRows.map((x) => ({ ...x, mbs: Number(settings.iddaaMbs) || 1 })));
-  const pushManual = (rows) => all.push(...rows.filter((x) => !autoMatches.has(x.match)));
+  const pushManual = (rows) => { if (!settings.onlyIddaa) all.push(...rows.filter((x) => !autoMatches.has(x.match))); };
   // Kuponlar tüm sporlardaki girişlerden kurulur (iddaa'da NBA ve NHL aynı kupona eklenebilir).
   for (const [sport, sn] of Object.entries(snapshots)) {
     if (sport === settings.sport || !sn) continue;
@@ -395,6 +398,7 @@ function renderAuto() {
   $("#autoMeta").textContent = auto
     ? `Son: ${ago(auto.fetchedAt)} · ${auto.fixtures} maç · ${auto.markets} market · iddaa ort. marj %${((auto.avgMargin || 0) * 100).toFixed(1)}${usage}`
     : `iddaa'nın tüm oranlarını Pinnacle ile otomatik karşılaştırır (2 istek)${usage}`;
+  if (settings.onlyIddaa) $("#meta").textContent = auto ? `iddaa oranları · ${ago(auto.fetchedAt)}` : "iddaa oranları henüz getirilmedi";
   if (autoError) { box.innerHTML = `<p class="intro err">${esc(autoError)}</p>`; return; }
   if (!auto) { box.innerHTML = ""; return; }
   const minEdge = (Number(settings.minEdge) || 0) / 100;
@@ -700,10 +704,13 @@ $("#refresh").addEventListener("click", () => (settings.onlyIddaa ? (show("v-idd
 
 function applyMode() {
   const only = !!settings.onlyIddaa;
+  document.body.classList.toggle("only-iddaa", only);
   document.querySelector('nav button[data-view="v-bets"]').hidden = only;
   $("#booksGroup").hidden = only;
-  $("#manualRefresh").hidden = !only;
+  if (only && !OP_SPORTS.includes(settings.sport)) { settings.sport = "nba"; saveSettings(); snapshot = snapshots.nba || null; }
+  render();
   if (only && $("#v-bets").classList.contains("on")) show("v-iddaa");
+  else if ($("#v-iddaa").classList.contains("on")) renderGames();
 }
 $("#onlyIddaa").checked = !!settings.onlyIddaa;
 $("#onlyIddaa").addEventListener("change", (e) => { settings.onlyIddaa = e.target.checked; saveSettings(); applyMode(); });
