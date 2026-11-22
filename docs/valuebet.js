@@ -343,7 +343,7 @@ export const SPORTS = {
   // reg: normal süre modeli. sd: normal süre fark sapması, tieRate: uzatmaya gitme oranı (μ=0 iken),
   // totalSd: normal süre toplam sapması, otPoints: uzatmada eklenen ortalama toplam sayı.
   nba: {
-    id: "nba", key: "basketball_nba", name: "NBA", labels: BASKET, spreadSd: 12.5, totalSd: 18.5, model: "normal",
+    id: "nba", key: "basketball_nba", name: "NBA", labels: BASKET, spreadSd: 12.5, totalSd: 18.5, model: "normal", iddaaRule: "ot",
     reg: { sd: 12, tieRate: 0.06, totalSd: 17.5, otPoints: 21 },
   },
   euroleague: {
@@ -351,12 +351,12 @@ export const SPORTS = {
     reg: { sd: 11, tieRate: 0.05, totalSd: 15, otPoints: 19 },
   },
   nfl: {
-    id: "nfl", key: "americanfootball_nfl", name: "NFL", spreadSd: 13.5, totalSd: 13.5, model: "normal",
+    id: "nfl", key: "americanfootball_nfl", name: "NFL", spreadSd: 13.5, totalSd: 13.5, model: "normal", iddaaRule: "ot",
     reg: { sd: 13.5, tieRate: 0.055, totalSd: 13, otPoints: 5 },
     labels: { h2h: "Maç Sonucu (uzt. dahil)", spreads: "Handikap", totals: "Toplam Sayı" },
   },
   nhl: {
-    id: "nhl", key: "icehockey_nhl", name: "NHL", model: "hockey",
+    id: "nhl", key: "icehockey_nhl", name: "NHL", model: "hockey", iddaaRule: "regulation",
     labels: { h2h: "Maç Sonucu (uzt. dahil)", spreads: "Handikap (uzt. dahil)", totals: "Toplam Gol (uzt. dahil)" },
   },
 };
@@ -554,14 +554,15 @@ export function evaluateIddaaRegulation(event, entry, options = {}) {
 
 /**
  * Spora ve kurala göre doğru iddaa değerlendiricisini seçer.
- * Hokey her zaman normal süredir (iddaa'da uzatma sayılmaz).
- * Basketbol/NFL varsayılan: uzatmalar dahil (iddaa NBA'de uzatmalar sayılır). Normal süre için
- * options.regulation = true ya da lig bazında options.regulationBySport = { nfl: true, ... }.
+ * iddaaRule (kullanıcının iddaa'da doğruladığı kural): NBA ve NFL'de uzatmalar sayılır ("ot"),
+ * NHL'de sayılmaz ("regulation"). Kuralı doğrulanmamış ligde (EuroLeague) varsayılan uzatmalar dahil;
+ * options.regulationBySport = { euroleague: true } ile normal süreye geçilir.
+ * options.regulation açıkça verilirse (kayıtlı bahsin ayağı) o kullanılır.
  */
 export function evaluateIddaaAny(event, entry, options = {}) {
   const sp = sportOf(event);
   if (sp.model === "hockey") return evaluateIddaaHockey(event, entry, options);
-  const reg = options.regulation ?? !!options.regulationBySport?.[sp.id];
+  const reg = options.regulation ?? (sp.iddaaRule ? sp.iddaaRule === "regulation" : !!options.regulationBySport?.[sp.id]);
   return reg ? evaluateIddaaRegulation(event, entry, options) : evaluateIddaa(event, entry, options);
 }
 

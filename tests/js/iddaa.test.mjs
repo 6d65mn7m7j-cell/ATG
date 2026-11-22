@@ -214,8 +214,14 @@ test("normal süre: toplam, uzatma payı kadar düşük; 1-X-2 ve alt/üst satı
   assert.ok(over.fair_probability < 0.5 && under.fair_probability > 0.5); // uzatma sayılmayınca üst zorlaşır
   // basketbol varsayılanı uzatmalar dahil (iddaa NBA kuralı); lig bazında normal süre seçilebilir
   assert.ok(evaluateIddaaAny(ev, { h2h: { home: "2", away: "2" } }).every((r) => !r.regulation));
-  assert.ok(evaluateIddaaAny(ev, { h2h: { home: "2", away: "2" } }, { regulationBySport: { nba: true } }).every((r) => r.regulation));
-  assert.ok(evaluateIddaaAny(ev, { h2h: { home: "2", away: "2" } }, { regulationBySport: { nfl: true } }).every((r) => !r.regulation));
+  // NBA ve NFL'de iddaa uzatmaları sayar: lig tercihi bunu değiştirmez
+  assert.ok(evaluateIddaaAny(ev, { h2h: { home: "2", away: "2" } }, { regulationBySport: { nba: true } }).every((r) => !r.regulation));
+  const nflEv = { ...ev, sport_key: "americanfootball_nfl" };
+  assert.ok(evaluateIddaaAny(nflEv, { h2h: { home: "2", away: "2" } }, { regulationBySport: { nfl: true } }).every((r) => !r.regulation));
+  // doğrulanmamış ligde (EuroLeague) tercih geçerli
+  const elEv = { ...ev, sport_key: "basketball_euroleague" };
+  assert.ok(evaluateIddaaAny(elEv, { h2h: { home: "2", away: "2" } }).every((r) => !r.regulation));
+  assert.ok(evaluateIddaaAny(elEv, { h2h: { home: "2", away: "2" } }, { regulationBySport: { euroleague: true } }).every((r) => r.regulation));
   assert.ok(evaluateIddaaAny(ev, { h2h: { home: "2", away: "2" } }, { regulation: true }).every((r) => r.regulation));
   // hokey her zaman normal süre
   assert.ok(evaluateIddaaAny(nhl, { h2h: { home: "2,5", draw: "4", away: "2,5" } }, { regulationBySport: { nhl: false } }).every((r) => r.model));
