@@ -64,8 +64,10 @@ def norm(s: Any) -> str:
 def main() -> int:
     print("== Hesap (ücretsiz uç nokta)")
     acc = get("/account")
-    safe = {k: v for k, v in acc.items() if not any(x in k.lower() for x in ("key", "email", "token", "id"))} if isinstance(acc, dict) else acc
-    print(json.dumps(safe, ensure_ascii=False)[:600])
+    subs = acc.get("subscriptions", []) if isinstance(acc, dict) else []
+    # Yalnızca özet: kimlikler ve e-posta gibi alanlar herkese açık günlüğe yazılmaz.
+    print(f"Abonelik: {len(subs)} | şirket erişimi: {len((subs[0] if subs else {}).get('bookmakers', {}))} | "
+          f"kota alanları: { {k: v for k, v in (subs[0] if subs else {}).items() if 'request' in k.lower() or 'limit' in k.lower()} }")
 
     print("\n== Şirketler")
     books = get("/bookmakers")
@@ -146,9 +148,55 @@ def main() -> int:
     return 0
 
 
+TOURNAMENTS = {"NBA": 132, "EuroLeague": 138, "NHL": 234, "NFL": 31}
+
+
+def iddaa_detail() -> int:
+    """iddaa'nın market yapısını ve fiyatlarını Pinnacle ile yan yana gösterir (3 istek)."""
+    markets = get("/markets")
+    mdef = {m.get("marketId"): m for m in markets}
+    sample = next(iter(mdef.values()))
+    print("Market tanımı alanları:", sorted(sample.keys()))
+    ids = ",".join(str(v) for v in TOURNAMENTS.values())
+    odds = {bk: get("/odds-by-tournaments", tournamentIds=ids, bookmaker=bk) for bk in ("iddaa", "pinnacle")}
+    inv = {v: k for k, v in TOURNAMENTS.items()}
+
+    def label(mid: str) -> str:
+        d = mdef.get(int(mid), {})
+        return f"{d.get('marketType')}|{d.get('period')}|{d.get('handicap')}"
+
+    def outcomes(mid: str, mk: dict) -> str:
+        d = mdef.get(int(mid), {})
+        names = {o.get("outcomeId"): o.get("outcomeName") for o in d.get("outcomes", [])}
+        parts = []
+        for oid, o in (mk.get("outcomes") or {}).items():
+            pl = (o.get("players") or {}).get("0") or {}
+            parts.append(f"{names.get(int(oid), oid)}={pl.get('price')}")
+        return " ".join(parts)
+
+    pin_by_fix = {f["fixtureId"]: (f.get("bookmakerOdds") or {}).get("pinnacle", {}).get("markets", {}) for f in odds["pinnacle"]}
+    for tid, name in inv.items():
+        fx = [f for f in odds["iddaa"] if f.get("tournamentId") == tid and (f.get("bookmakerOdds") or {}).get("iddaa", {}).get("markets")]
+        print(f"\n== {name}: iddaa oranlı maç {len(fx)}")
+        if not fx:
+            continue
+        types = Counter(label(m).rsplit("|", 1)[0] for f in fx for m in f["bookmakerOdds"]["iddaa"]["markets"])
+        print("iddaa market türleri:", ", ".join(f"{k}×{v}" for k, v in types.most_common(15)))
+        f = sorted(fx, key=lambda f: f.get("startTime", ""))[0]
+        print(f"Örnek maç {f.get('startTime')} (katılımcı {f.get('participant1Id')} – {f.get('participant2Id')})")
+        pin = pin_by_fix.get(f["fixtureId"], {})
+        for mid, mk in sorted(f["bookmakerOdds"]["iddaa"]["markets"].items(), key=lambda kv: label(kv[0]))[:14]:
+            line = f"  {label(mid):40s} iddaa: {outcomes(mid, mk)}"
+            if mid in pin:
+                line += f" | pinnacle: {outcomes(mid, pin[mid])}"
+            print(line)
+    print(f"\nBu çalışmada harcanan OddsPapi isteği: {used}")
+    return 0
+
+
 if __name__ == "__main__":
     KEY = os.environ.get("ODDSPAPI_KEY", "").strip()
     if not KEY:
         print("ODDSPAPI_KEY tanımlı değil.")
         sys.exit(1)
-    sys.exit(main())
+    sys.exit(iddaa_detail() if "--iddaa" in sys.argv else main())

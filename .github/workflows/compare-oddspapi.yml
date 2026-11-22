@@ -1,7 +1,13 @@
 name: OddsPapi karşılaştırması
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "genel ya da iddaa"
+        type: choice
+        options: [genel, iddaa]
+        default: genel
 
 permissions:
   contents: read
@@ -19,4 +25,4 @@ jobs:
       - name: OddsPapi'yi dene
         env:
           ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
-        run: python scripts/compare_oddspapi.py
+        run: python scripts/compare_oddspapi.py ${{ inputs.mode == 'iddaa' && '--iddaa' || '' }}
