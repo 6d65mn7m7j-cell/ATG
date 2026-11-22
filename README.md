@@ -1,6 +1,6 @@
-# NBA Değerli Bahis Bulucu
+# NBA & NHL Değerli Bahis Bulucu
 
-NBA maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif beklenen değerli (+EV)** bahisleri bulan uygulama. Web arayüzü, REST API ve komut satırı aracı içerir.
+NBA ve NHL maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif beklenen değerli (+EV)** bahisleri bulan uygulama. Web arayüzü, REST API ve komut satırı aracı içerir.
 
 ## Nasıl çalışır?
 
@@ -19,6 +19,7 @@ NBA maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif 
 - iPhone'a ekleme: Safari'de sayfayı açın → **Paylaş** → **Ana Ekrana Ekle**.
 - Ayarlar değiştirildiğinde yeniden API isteği yapılmaz; son çekilen oranlar üzerinden yeniden hesaplanır (kota dostu).
 - **iddaa sekmesi:** iddaa'da gördüğünüz oranları (maç sonucu, handikap, alt/üst) ve maçın MBS değerini elle girersiniz. Oranlar Pinnacle'ın marjsız oranıyla karşılaştırılır; iddaa çizgisi farklıysa adil olasılık normal dağılım modeliyle (fark σ≈12.5, toplam σ≈18.5) düzeltilir. MBS kuralına uyan ve her maçtan tek seçim içeren pozitif EV'li kuponlar, beklenen log büyümesine göre sıralanarak önerilir. Girişler yalnızca cihazda saklanır.
+- **NHL:** Üstteki NBA/NHL düğmesiyle spor değiştirilir; her spor için son tarama ayrı saklanır. iddaa'da buz hokeyi normal süreye (60 dk) göre oynandığı için NHL kartında MS ve handikap 1-X-2, alt/üst normal süre golleri olarak girilir. Adil olasılıklar, Pinnacle'ın uzatmalar dahil maç sonucu ve toplam gol oranlarına uydurulan bir Poisson gol modelinden türetilir (normal sürede beraberlik NHL gerçeğine göre ~%21-23'e kalibre edilir, uzatma/penaltı yazı-tura ve toplam gole +1 sayılır). NBA ve NHL girişleri aynı kuponda birleştirilebilir.
 - Yerelde deneme: `python -m http.server -d docs 8080`
 
 ## Kurulum
@@ -41,6 +42,7 @@ uvicorn valuebet.server:app --reload
 
 ```bash
 python -m valuebet --demo                         # örnek veriyle dene
+python -m valuebet --sport nhl                    # NHL
 python -m valuebet --min-edge 0.03 --books draftkings,fanduel
 python -m valuebet --reference consensus --devig shin --json
 ```

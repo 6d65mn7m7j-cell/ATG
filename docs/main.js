@@ -1,6 +1,6 @@
-import { findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaa, buildCoupons } from "./valuebet.js?v=3";
+import { findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS } from "./valuebet.js?v=4";
 
-const API = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds";
+const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (x) => (x * 100).toFixed(1) + "%";
@@ -25,10 +25,13 @@ const settings = {
   minEdge: DEFAULTS.minEdge * 100, reference: DEFAULTS.reference, devigMethod: DEFAULTS.devigMethod,
   minOdds: DEFAULTS.minOdds, maxOdds: DEFAULTS.maxOdds, bankroll: DEFAULTS.bankroll,
   kellyMultiplier: String(DEFAULTS.kellyMultiplier), maxStakePct: DEFAULTS.maxStakePct * 100,
-  books: [], market: "all",
+  books: [], market: "all", sport: "nba",
   ...store.get("settings", {}),
 };
-let snapshot = store.get("snapshot", null); // { events, fetchedAt, source, quota }
+// Her spor için ayrı son tarama: { events, fetchedAt, source, quota }
+const snapshots = { nba: store.get("snapshot_nba", store.get("snapshot", null)), nhl: store.get("snapshot_nhl", null) };
+let snapshot = snapshots[settings.sport] || null;
+const setSnapshot = (sport, snap) => { snapshots[sport] = snap; store.set("snapshot_" + sport, snap); if (sport === settings.sport) snapshot = snap; };
 let iddaa = store.get("iddaa", {}); // { eventId: { h2h:{home,away}, spreads:{line,home,away}, totals:{line,over,under}, mbs } }
 let error = "";
 let loading = false;
@@ -44,14 +47,20 @@ async function refresh() {
     render();
     return;
   }
+  if (settings.demo && settings.sport !== "nba") {
+    error = `Demo verisi yalnızca NBA için. ${SPORTS[settings.sport].name} oranları için Ayarlar'dan API anahtarınızı girin.`;
+    render();
+    return;
+  }
   loading = true;
   $("#refresh").classList.add("spin");
   try {
     let events, quota = null;
+    const sport = settings.sport;
     if (settings.demo) {
       events = await (await fetch("sample_odds.json", { cache: "no-store" })).json();
     } else {
-      const url = `${API}?regions=${encodeURIComponent(settings.regions)}&markets=h2h,spreads,totals&oddsFormat=decimal&dateFormat=iso`;
+      const url = `${API(sport)}?regions=${encodeURIComponent(settings.regions)}&markets=h2h,spreads,totals&oddsFormat=decimal&dateFormat=iso`;
       const r = await fetch(url, { headers: { "x-api-key": settings.apiKey.trim() } });
       if (r.status === 401) throw new Error("API anahtarı geçersiz.");
       if (r.status === 429) throw new Error("İstek limitine ulaşıldı.");
@@ -59,8 +68,7 @@ async function refresh() {
       quota = { remaining: r.headers.get("x-requests-remaining"), used: r.headers.get("x-requests-used") };
       events = await r.json();
     }
-    snapshot = { events, fetchedAt: Date.now(), source: settings.demo ? "demo" : "live", quota };
-    store.set("snapshot", snapshot);
+    setSnapshot(sport, { events, fetchedAt: Date.now(), source: settings.demo ? "demo" : "live", quota });
   } catch (e) {
     error = e.message === "Failed to fetch" ? "Bağlantı kurulamadı. İnternet bağlantınızı kontrol edin." : e.message;
   } finally {
@@ -96,6 +104,7 @@ function compute() {
     kellyMultiplier: Number(settings.kellyMultiplier),
     maxStakePct: (Number(settings.maxStakePct) || 0) / 100,
     markets,
+    labels: SPORTS[settings.sport].labels,
     bookmakers: settings.books.length ? settings.books : null,
   });
   return { bets, summary: summarize(snapshot.events, bets) };
@@ -110,6 +119,8 @@ function render() {
     if (snapshot.quota?.remaining) meta.push(`kalan istek: ${snapshot.quota.remaining}`);
   }
   $("#meta").textContent = meta.join(" · ") || "Henüz tarama yapılmadı";
+  $("#sportName").textContent = SPORTS[settings.sport].name;
+  document.querySelectorAll("[data-sport]").forEach((b) => b.classList.toggle("on", b.dataset.sport === settings.sport));
 
   const chips = [["all", "Tümü"], ["h2h", "Maç Sonucu"], ["spreads", "Handikap"], ["totals", "Toplam"]];
   $("#mchips").innerHTML = chips.map(([k, t]) => `<button class="chip ${settings.market === k ? "on" : ""}" data-m="${k}">${t}</button>`).join("");
@@ -129,12 +140,14 @@ function render() {
     return;
   }
   if (!res) {
-    list.innerHTML = `<div class="empty"><b>Oranları taramak için yenileyin</b>Sağ üstteki düğmeye dokunun. Her tarama 6 API isteği harcar.<button class="btn" data-refresh>Şimdi tara</button></div>`;
+    list.innerHTML = settings.demo && settings.sport !== "nba"
+      ? `<div class="empty"><b>Demo verisi yalnızca NBA için</b>${SPORTS[settings.sport].name} oranları için Ayarlar'dan API anahtarınızı girin.</div>`
+      : `<div class="empty"><b>Oranları taramak için yenileyin</b>Sağ üstteki düğmeye dokunun. Her tarama 6 API isteği harcar.<button class="btn" data-refresh>Şimdi tara</button></div>`;
     return;
   }
   list.innerHTML = res.bets.length
     ? renderBets(res.bets)
-    : `<div class="empty"><b>Şu an değerli bahis yok</b>Maç günü NBA oranları genellikle verimlidir. Oranlar açıldığında veya sakatlık haberlerinden sonra tekrar tarayın ya da en düşük EV eşiğini düşürün.</div>`;
+    : `<div class="empty"><b>Şu an değerli bahis yok</b>Maç günü ${SPORTS[settings.sport].name} oranları genellikle verimlidir. Oranlar açıldığında veya sakatlık haberlerinden sonra tekrar tarayın ya da en düşük EV eşiğini düşürün.</div>`;
 }
 
 function renderBets(bets) {
@@ -187,6 +200,9 @@ const get = (o, path) => path.split(".").reduce((x, k) => x?.[k], o);
 
 function renderGames() {
   const box = $("#games");
+  $("#iddaaIntro").textContent = settings.sport === "nhl"
+    ? "iddaa'da buz hokeyi bahisleri normal süre (60 dk) sonucuna göredir: MS ve handikap 1-X-2, alt/üst normal süre golleri. Adil oranlar Pinnacle'ın uzatmalar dahil oranlarından Poisson gol modeliyle türetilir. Handikapta ev sahibinin gol handikabını girin (ör. -1 ya da -1,5). Ondalık için virgül kullanabilirsiniz."
+    : "iddaa'da gördüğünüz oranları girin; Pinnacle'ın marjsız oranıyla karşılaştırılır. Ondalık için virgül kullanabilirsiniz. Basketbolda iddaa oranları uzatmalar dahildir. Çizgi farklıysa (ör. iddaa -2.5, Pinnacle -3.5) adil olasılık istatistiksel olarak düzeltilir.";
   if (!snapshot) {
     box.innerHTML = `<div class="empty"><b>Önce oranları tarayın</b>Karşılaştırma için Pinnacle oranları gerekir.<button class="btn" data-refresh>Şimdi tara</button></div>`;
     renderCoupons([]);
@@ -198,8 +214,8 @@ function renderGames() {
     renderCoupons([]);
     return;
   }
-  // artık listede olmayan maçların girişlerini temizle
-  const ids = new Set(snapshot.events.map((e) => e.id));
+  // hiçbir taramada olmayan (biten) maçların girişlerini temizle
+  const ids = new Set(Object.values(snapshots).flatMap((sn) => (sn?.events || []).map((e) => e.id)));
   for (const k of Object.keys(iddaa)) if (!ids.has(k)) delete iddaa[k];
   store.set("iddaa", iddaa);
 
@@ -208,13 +224,19 @@ function renderGames() {
   box.innerHTML = games.map((g) => {
     const H = short(g.home_team), A = short(g.away_team), id = g.id;
     const mbs = iddaa[id]?.mbs ?? "1";
+    const hockey = settings.sport === "nhl";
+    const rows = hockey ? `
+      <div class="mk mk5"><span>MS</span><i></i>${inp(id, "h2h.home", "1")}${inp(id, "h2h.draw", "X")}${inp(id, "h2h.away", "2")}</div>
+      <div class="mk mk5"><span>Handikap</span>${inp(id, "spreads.line", H + " hnd", "text")}${inp(id, "spreads.home", "1")}${inp(id, "spreads.draw", "X")}${inp(id, "spreads.away", "2")}</div>
+      <div class="mk mk5"><span>Alt / Üst</span>${inp(id, "totals.line", "Çizgi")}${inp(id, "totals.under", "Alt")}${inp(id, "totals.over", "Üst")}<i></i></div>` : `
+      <div class="mk"><span>Maç Sonucu</span><i></i>${inp(id, "h2h.home", "1 · " + H)}${inp(id, "h2h.away", "2 · " + A)}</div>
+      <div class="mk"><span>Handikap</span>${inp(id, "spreads.line", H + " hnd", "text")}${inp(id, "spreads.home", H)}${inp(id, "spreads.away", A)}</div>
+      <div class="mk"><span>Alt / Üst</span>${inp(id, "totals.line", "Çizgi")}${inp(id, "totals.under", "Alt")}${inp(id, "totals.over", "Üst")}</div>`;
     return `
     <article class="card game" data-game="${esc(id)}">
       <div class="top"><span>${esc(when(g.commence_time))}</span><button class="linkbtn" data-clear="${esc(id)}">Temizle</button></div>
       <h4>${esc(g.home_team)} – ${esc(g.away_team)}</h4>
-      <div class="mk"><span>Maç Sonucu</span><input class="blank" tabindex="-1" aria-hidden="true">${inp(id, "h2h.home", "1 · " + H)}${inp(id, "h2h.away", "2 · " + A)}</div>
-      <div class="mk"><span>Handikap</span>${inp(id, "spreads.line", H + " hnd", "text")}${inp(id, "spreads.home", H)}${inp(id, "spreads.away", A)}</div>
-      <div class="mk"><span>Alt / Üst</span>${inp(id, "totals.line", "Çizgi")}${inp(id, "totals.under", "Alt")}${inp(id, "totals.over", "Üst")}</div>
+      ${rows}
       <div class="mbs"><span>MBS (en az kaç maçlı kupon)</span>
         <select data-ev="${esc(id)}" data-path="mbs">${[1, 2, 3, 4].map((n) => `<option ${String(mbs) === String(n) ? "selected" : ""}>${n}</option>`).join("")}</select>
       </div>
@@ -225,24 +247,30 @@ function renderGames() {
 }
 
 function updateIddaa() {
-  if (!snapshot) return;
   const opts = engineOptions();
   const all = [];
+  // Kuponlar tüm sporlardaki girişlerden kurulur (iddaa'da NBA ve NHL aynı kupona eklenebilir).
+  for (const [sport, sn] of Object.entries(snapshots)) {
+    if (sport === settings.sport || !sn) continue;
+    for (const g of sn.events) {
+      if (iddaa[g.id] && Date.parse(g.commence_time) > Date.now() - 5 * 60000) all.push(...evaluateIddaaAny(g, iddaa[g.id], opts));
+    }
+  }
   for (const g of upcoming()) {
     const el = document.getElementById("evals-" + g.id);
     if (!el) continue;
     const entry = iddaa[g.id];
     if (!entry) { el.innerHTML = ""; continue; }
-    const rows = evaluateIddaa(g, entry, opts);
+    const rows = evaluateIddaaAny(g, entry, opts);
     all.push(...rows);
-    const typed = ["h2h.home", "h2h.away", "spreads.home", "spreads.away", "totals.over", "totals.under"].some((p) => get(entry, p));
+    const typed = ["h2h.home", "h2h.draw", "h2h.away", "spreads.home", "spreads.draw", "spreads.away", "totals.over", "totals.under"].some((p) => get(entry, p));
     if (!rows.length) {
       el.innerHTML = typed ? `<div class="ev-row"><div class="nm">Bu market için referans oran bulunamadı ya da çizgi eksik.</div></div>` : "";
       continue;
     }
     el.innerHTML = rows.map((x) => {
       const val = x.edge >= opts.minEdge;
-      const note = x.adjusted ? `çizgi düzeltildi · ref. ${x.market === "spreads" ? (x.reference_line > 0 ? "+" : "") : ""}${x.reference_line}` : (x.reference === "sharp" ? x.reference_books[0] : "konsensüs");
+      const note = x.model ? `model · ${x.reference === "sharp" ? x.reference_books[0] : "konsensüs"}` : x.adjusted ? `çizgi düzeltildi · ref. ${x.market === "spreads" ? (x.reference_line > 0 ? "+" : "") : ""}${x.reference_line}` : (x.reference === "sharp" ? x.reference_books[0] : "konsensüs");
       return `<div class="ev-row ${val ? "value" : ""}">
         <div class="nm">${esc(x.label)}<small>${esc(x.market_label)} · ${esc(note)}</small></div>
         <div class="od"><b>${x.odds.toFixed(2)}</b><br><small>adil ${x.fair_odds.toFixed(2)}</small></div>
@@ -302,7 +330,7 @@ function bindSettings() {
   }
   const demo = $("#demo");
   demo.checked = settings.demo;
-  demo.addEventListener("change", () => { settings.demo = demo.checked; saveSettings(); snapshot = null; store.set("snapshot", null); refresh(); });
+  demo.addEventListener("change", () => { settings.demo = demo.checked; saveSettings(); setSnapshot("nba", null); setSnapshot("nhl", null); refresh(); });
 }
 
 function show(view) {
@@ -314,9 +342,16 @@ function show(view) {
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-m],[data-view],[data-go],[data-refresh],[data-clear],.card");
+  const t = e.target.closest("[data-sport],[data-m],[data-view],[data-go],[data-refresh],[data-clear],.card");
   if (!t || t.classList.contains("game") || t.classList.contains("coupon")) return;
-  if (t.dataset.clear) { delete iddaa[t.dataset.clear]; store.set("iddaa", iddaa); renderGames(); }
+  if (t.dataset.sport) {
+    settings.sport = t.dataset.sport; saveSettings();
+    snapshot = snapshots[settings.sport] || null; error = "";
+    render();
+    if ($("#v-iddaa").classList.contains("on")) renderGames();
+    if ($("#v-settings").classList.contains("on")) renderBooks();
+    if (!snapshot && (settings.apiKey || settings.demo)) refresh();
+  } else if (t.dataset.clear) { delete iddaa[t.dataset.clear]; store.set("iddaa", iddaa); renderGames(); }
   else if (t.dataset.m) { settings.market = t.dataset.m; saveSettings(); render(); }
   else if (t.dataset.view) show(t.dataset.view);
   else if (t.dataset.go) show(t.dataset.go);

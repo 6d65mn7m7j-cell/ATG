@@ -91,3 +91,18 @@ def test_exchange_commission_reduces_edge():
     b = find_value_bets([ev], FinderConfig(min_edge=0.0, devig_method="multiplicative"))[0]
     assert b.net_price == pytest.approx(1 + 1.10 * 0.95)
     assert b.edge == pytest.approx(0.5 * b.net_price - 1, abs=1e-4)
+
+
+def test_providers_sport_handling():
+    from valuebet.providers import ProviderError, SampleProvider, TheOddsAPIProvider
+
+    assert SampleProvider().fetch(sport="nhl") == []
+    with pytest.raises(ProviderError):
+        TheOddsAPIProvider(api_key="x").fetch(sport="nfl")
+
+
+def test_hockey_market_labels():
+    ev = event(book("pinnacle", h2h=(1.95, 1.95)), book("soft", h2h=(2.10, 1.75)))
+    ev["sport_key"] = "icehockey_nhl"
+    b = find_value_bets([ev], FinderConfig(min_edge=0.01))[0]
+    assert b.market_label == "Maç Sonucu (uzt. dahil)"

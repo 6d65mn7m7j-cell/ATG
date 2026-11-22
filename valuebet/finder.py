@@ -17,6 +17,12 @@ from typing import Any, Iterable
 from . import odds as om
 
 MARKET_LABELS = {"h2h": "Maç Sonucu", "spreads": "Handikap", "totals": "Toplam Sayı"}
+HOCKEY_MARKET_LABELS = {"h2h": "Maç Sonucu (uzt. dahil)", "spreads": "Handikap (uzt. dahil)", "totals": "Toplam Gol (uzt. dahil)"}
+
+
+def market_label(event: dict[str, Any], market: str) -> str:
+    labels = HOCKEY_MARKET_LABELS if str(event.get("sport_key", "")).startswith("icehockey") else MARKET_LABELS
+    return labels.get(market, market)
 DEFAULT_SHARP_BOOKS = ("pinnacle", "betonlineag", "circasports", "lowvig")
 
 # Bahis borsaları net kazançtan komisyon keser; EV bu net orana göre hesaplanır.
@@ -218,7 +224,7 @@ def find_value_bets(events: Iterable[dict[str, Any]], cfg: FinderConfig | None =
                                 home_team=event["home_team"],
                                 away_team=event["away_team"],
                                 market=market,
-                                market_label=MARKET_LABELS.get(market, market),
+                                market_label=market_label(event, market),
                                 selection=name,
                                 point=line.points.get(name),
                                 bookmaker=line.key,

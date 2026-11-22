@@ -141,7 +141,7 @@ export function findValueBets(events, options = {}) {
             const k = kellyFraction(p, net);
             const bet = {
               event_id: ev.id, commence_time: ev.commence_time, home_team: ev.home_team, away_team: ev.away_team,
-              market, market_label: MARKET_LABELS[market] || market, selection: name, point: line.points[name],
+              market, market_label: (cfg.labels || MARKET_LABELS)[market] || market, selection: name, point: line.points[name],
               bookmaker: line.key, bookmaker_title: line.title, price, net_price: r(net, 3),
               american: decimalToAmerican(price), fair_probability: r(p), fair_odds: r(1 / p, 3),
               implied_probability: r(1 / price), edge: r(edge), kelly: r(k),
@@ -320,4 +320,118 @@ export function buildCoupons(selections, options = {}) {
   };
   coupons.sort((a, b) => growth(b) - growth(a) || b.edge - a.edge);
   return coupons.slice(0, cfg.limit);
+}
+
+// ================================================================ sporlar
+export const SPORTS = {
+  nba: {
+    id: "nba", key: "basketball_nba", name: "NBA",
+    labels: { h2h: "Maç Sonucu", spreads: "Handikap", totals: "Toplam Sayı" },
+  },
+  nhl: {
+    id: "nhl", key: "icehockey_nhl", name: "NHL",
+    labels: { h2h: "Maç Sonucu (uzt. dahil)", spreads: "Handikap (uzt. dahil)", totals: "Toplam Gol (uzt. dahil)" },
+  },
+};
+export const sportOf = (event) => (String(event.sport_key || "").startsWith("icehockey") ? SPORTS.nhl : SPORTS.nba);
+
+// ================================================================ hokey modeli (Poisson)
+// Normal süre golleri bağımsız Poisson; beraberlik olasılığı NHL gerçeğine (~%22-23) göre şişirilir.
+// Uzatma/penaltılarda: kazanan yaklaşık yazı-tura, toplam gole +1 eklenir (ABD şirketleri penaltı galibiyetini gol sayar).
+export const HOCKEY = { maxGoals: 15, drawInflation: 0.4, otHomeShare: 0.5 };
+
+function poissonPmf(l, n) {
+  const out = [Math.exp(-l)];
+  for (let k = 1; k <= n; k++) out.push(out[k - 1] * l / k);
+  return out;
+}
+
+/** Normal süre skor olasılık matrisi M[i][j] (i: ev sahibi golü, j: deplasman golü). */
+export function hockeyMatrix(lh, la) {
+  const n = HOCKEY.maxGoals, a = poissonPmf(lh, n), b = poissonPmf(la, n);
+  const M = a.map((pa, i) => b.map((pb, j) => pa * pb * (i === j ? 1 + HOCKEY.drawInflation : 1)));
+  const s = M.flat().reduce((x, y) => x + y, 0);
+  return M.map((row) => row.map((v) => v / s));
+}
+
+function sumWhere(M, f) {
+  let s = 0;
+  for (let i = 0; i < M.length; i++) for (let j = 0; j < M.length; j++) if (f(i, j)) s += M[i][j];
+  return s;
+}
+const fullHomeWin = (M) => sumWhere(M, (i, j) => i > j) + HOCKEY.otHomeShare * sumWhere(M, (i, j) => i === j);
+const fullTotal = (i, j) => i + j + (i === j ? 1 : 0);
+function overNoPush(M, line, total) {
+  const win = sumWhere(M, (i, j) => total(i, j) > line), push = sumWhere(M, (i, j) => total(i, j) === line);
+  return win / (1 - push);
+}
+
+/** Uzatmalar dahil ev sahibi kazanma olasılığı ve toplam çizgisi/üst olasılığından gol beklentilerini çözer. */
+export function fitHockey(pHomeFull, totalLine, pOver) {
+  const solveShare = (mu) => bisect((s) => fullHomeWin(hockeyMatrix(mu * s, mu * (1 - s))) - pHomeFull, 0.05, 0.95, 1e-7, 60);
+  const mu = bisect((mu) => {
+    const s = solveShare(mu);
+    return overNoPush(hockeyMatrix(mu * s, mu * (1 - s)), totalLine, fullTotal) - pOver;
+  }, 2, 11, 1e-7, 60);
+  const s = solveShare(mu);
+  return { lh: mu * s, la: mu * (1 - s) };
+}
+
+/** Bir NHL maçı için referans oranlardan normal süre modeli kurar. */
+export function hockeyModel(event, options = {}) {
+  const cfg = { ...DEFAULTS, ...options };
+  const ml = pickReference(referenceLines(event, "h2h", cfg), null);
+  const tots = referenceLines(event, "totals", cfg);
+  if (!ml || !tots.length) return null;
+  const pool = tots.some((r) => r.kind === "sharp") ? tots.filter((r) => r.kind === "sharp") : tots;
+  const main = pool.reduce((b, r) => (Math.abs(r.probs.Over - 0.5) < Math.abs(b.probs.Over - 0.5) ? r : b));
+  const { lh, la } = fitHockey(ml.probs[event.home_team], main.line, main.probs.Over);
+  return { lh, la, M: hockeyMatrix(lh, la), reference: ml.kind, books: [...new Set([...ml.books, ...main.books])], totalLine: main.line };
+}
+
+/**
+ * iddaa hokey oranları (normal süre). entry = { h2h:{home,draw,away}, spreads:{line,home,draw,away}, totals:{line,over,under}, mbs }
+ * spreads.line ev sahibinin gol handikabı (ör. -1 ya da -1.5); tam sayı çizgide X (beraberlik) seçeneği vardır.
+ */
+export function evaluateIddaaHockey(event, entry, options = {}) {
+  const model = hockeyModel(event, options);
+  if (!model) return [];
+  const { M } = model, H = event.home_team, A = event.away_team, e = entry || {};
+  const res = [];
+  const push = (market, label, odds, win, pushP = 0) => {
+    if (odds == null) return;
+    const p = win + pushP / odds; // iade olasılığını içeren etkin olasılık: EV = p*o - 1
+    res.push({
+      event_id: event.id, match: `${H} – ${A}`, commence_time: event.commence_time, market,
+      market_label: { h2h: "Maç Sonucu (normal süre)", spreads: "Handikap (normal süre)", totals: "Alt/Üst (normal süre)" }[market],
+      side: label, label, odds, fair_probability: r(p), fair_odds: r((1 - pushP) / win, 3), edge: r(p * odds - 1),
+      reference: model.reference, reference_books: model.books, reference_line: null, adjusted: true, model: true,
+      mbs: Number(e.mbs) || 1,
+    });
+  };
+  if (e.h2h) {
+    push("h2h", `1 · ${H}`, parseOdds(e.h2h.home), sumWhere(M, (i, j) => i > j));
+    push("h2h", "X · Beraberlik", parseOdds(e.h2h.draw), sumWhere(M, (i, j) => i === j));
+    push("h2h", `2 · ${A}`, parseOdds(e.h2h.away), sumWhere(M, (i, j) => i < j));
+  }
+  const h = e.spreads ? parseLine(e.spreads.line) : null;
+  if (h != null) {
+    const d = (i, j) => i - j + h;
+    const f = (x) => (x > 0 ? "+" : "") + x;
+    push("spreads", `${H} (${f(h)})`, parseOdds(e.spreads.home), sumWhere(M, (i, j) => d(i, j) > 0));
+    if (Number.isInteger(h)) push("spreads", `X (${f(h)})`, parseOdds(e.spreads.draw), sumWhere(M, (i, j) => d(i, j) === 0));
+    push("spreads", `${A} (${f(-h)})`, parseOdds(e.spreads.away), sumWhere(M, (i, j) => d(i, j) < 0));
+  }
+  const L = e.totals ? parseLine(e.totals.line) : null;
+  if (L != null) {
+    const pushP = sumWhere(M, (i, j) => i + j === L);
+    push("totals", `Üst ${L}`, parseOdds(e.totals.over), sumWhere(M, (i, j) => i + j > L), pushP);
+    push("totals", `Alt ${L}`, parseOdds(e.totals.under), sumWhere(M, (i, j) => i + j < L), pushP);
+  }
+  return res;
+}
+
+/** Spora göre doğru iddaa değerlendiricisini seçer. */
+export function evaluateIddaaAny(event, entry, options = {}) {
+  return sportOf(event).id === "nhl" ? evaluateIddaaHockey(event, entry, options) : evaluateIddaa(event, entry, options);
 }

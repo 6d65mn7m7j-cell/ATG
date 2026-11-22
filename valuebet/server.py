@@ -60,13 +60,14 @@ def value_bets(
     max_odds: float = Query(6.0, ge=1.01),
     regions: str = Query("us,eu"),
     demo: bool = Query(False),
+    sport: str = Query("nba", pattern="^(nba|nhl)$"),
 ) -> dict:
     if devig not in om.DEVIG_METHODS:
         raise HTTPException(400, f"devig şunlardan biri olmalı: {', '.join(om.DEVIG_METHODS)}")
     market_t = tuple(m for m in _csv(markets) if m in ("h2h", "spreads", "totals")) or ("h2h",)
     provider = _provider(demo)
     try:
-        events = provider.fetch(markets=("h2h", "spreads", "totals"), regions=regions)
+        events = provider.fetch(markets=("h2h", "spreads", "totals"), regions=regions, sport=sport)
     except ProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
@@ -89,6 +90,7 @@ def value_bets(
     )
     return {
         "source": provider.name,
+        "sport": sport,
         "quota": provider.quota,
         "summary": summarize(events, bets),
         "bookmakers": [{"key": k, "title": t} for k, t in all_books],

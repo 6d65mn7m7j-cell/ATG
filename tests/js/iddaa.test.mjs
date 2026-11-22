@@ -68,3 +68,60 @@ test("kupon: MBS kuralı ve maç başına tek seçim", () => {
   const ab = coupons.find((c) => c.legs.length === 2 && c.legs.every((l) => "ab".includes(l.event_id)));
   assert.ok(Math.abs(ab.edge - (1.06 * 1.05 - 1)) < 1e-4);
 });
+
+import { fitHockey, hockeyMatrix, hockeyModel, evaluateIddaaHockey, evaluateIddaaAny, HOCKEY } from "../../docs/valuebet.js";
+
+const sum = (M, f) => M.reduce((s, row, i) => s + row.reduce((t, v, j) => t + (f(i, j) ? v : 0), 0), 0);
+
+test("hokey: matris normalize, beraberlik ~%20-23", () => {
+  const M = hockeyMatrix(3.1, 2.9);
+  assert.ok(Math.abs(sum(M, () => true) - 1) < 1e-9);
+  const d = sum(M, (i, j) => i === j);
+  assert.ok(d > 0.19 && d < 0.24, String(d));
+});
+
+test("hokey: model referans olasılıkları geri üretir", () => {
+  const { lh, la } = fitHockey(0.6, 6.5, 0.45);
+  const M = hockeyMatrix(lh, la);
+  const full = sum(M, (i, j) => i > j) + HOCKEY.otHomeShare * sum(M, (i, j) => i === j);
+  assert.ok(Math.abs(full - 0.6) < 1e-4);
+  const over = sum(M, (i, j) => i + j + (i === j ? 1 : 0) > 6.5);
+  assert.ok(Math.abs(over - 0.45) < 1e-4);
+  assert.ok(lh > la);
+});
+
+const nhl = {
+  id: "h1", sport_key: "icehockey_nhl", commence_time: "2026-11-23T00:00:00Z", home_team: "Home", away_team: "Away",
+  bookmakers: [{ key: "pinnacle", title: "Pinnacle", markets: [
+    { key: "h2h", outcomes: [{ name: "Home", price: 1.95 }, { name: "Away", price: 1.95 }] },
+    { key: "totals", outcomes: [{ name: "Over", price: 1.95, point: 6 }, { name: "Under", price: 1.95, point: 6 }] },
+  ] }],
+};
+
+test("hokey iddaa: 1X2 toplamı 1, simetrik maçta 1 = 2, handikap ve alt/üst", () => {
+  const rows = evaluateIddaaHockey(nhl, {
+    h2h: { home: "2,6", draw: "4,2", away: "2,6" },
+    spreads: { line: "-1", home: "5", draw: "4", away: "1,4" },
+    totals: { line: "5,5", over: "1,8", under: "2" }, mbs: 2,
+  }, { devigMethod: "multiplicative" });
+  const ms = rows.filter((r) => r.market === "h2h");
+  assert.equal(ms.length, 3);
+  const total = ms.reduce((s, r) => s + r.fair_probability, 0);
+  assert.ok(Math.abs(total - 1) < 1e-3);
+  assert.ok(Math.abs(ms[0].fair_probability - ms[2].fair_probability) < 1e-3);
+  const hc = rows.filter((r) => r.market === "spreads");
+  assert.equal(hc.length, 3);
+  assert.ok(Math.abs(hc.reduce((s, r) => s + r.fair_probability, 0) - 1) < 1e-3);
+  assert.equal(hc[0].label, "Home (-1)");
+  const tot = rows.filter((r) => r.market === "totals");
+  assert.ok(Math.abs(tot[0].fair_probability + tot[1].fair_probability - 1) < 1e-3);
+  assert.ok(rows.every((r) => r.mbs === 2 && r.model));
+  // yarım çizgide X seçeneği yok
+  const half = evaluateIddaaHockey(nhl, { spreads: { line: "-1,5", home: "3", draw: "4", away: "1,4" } });
+  assert.equal(half.length, 2);
+});
+
+test("evaluateIddaaAny spora göre yönlendirir", () => {
+  assert.ok(evaluateIddaaAny(nhl, { h2h: { home: "2,5", draw: "4", away: "2,5" } }).every((r) => r.model));
+  assert.equal(hockeyModel({ ...nhl, bookmakers: [] }), null);
+});

@@ -15,7 +15,8 @@ from typing import Any
 import httpx
 
 SAMPLE_PATH = Path(__file__).parent / "data" / "sample_odds.json"
-SPORT_KEY = "basketball_nba"
+SPORTS = {"nba": "basketball_nba", "nhl": "icehockey_nhl"}
+SPORT_KEY = SPORTS["nba"]
 
 
 class ProviderError(RuntimeError):
@@ -29,7 +30,9 @@ class SampleProvider:
         self.path = path
         self.quota: dict[str, Any] = {}
 
-    def fetch(self, markets: tuple[str, ...] = ("h2h", "spreads", "totals"), regions: str = "us,eu") -> list[dict[str, Any]]:
+    def fetch(self, markets: tuple[str, ...] = ("h2h", "spreads", "totals"), regions: str = "us,eu", sport: str = "nba") -> list[dict[str, Any]]:
+        if sport != "nba":
+            return []  # demo verisi yalnızca NBA için
         with open(self.path, encoding="utf-8") as fh:
             events = json.load(fh)
         for e in events:
@@ -51,8 +54,10 @@ class TheOddsAPIProvider:
         self._cache: dict[tuple, tuple[float, list[dict[str, Any]]]] = {}
         self.quota: dict[str, Any] = {}
 
-    def fetch(self, markets: tuple[str, ...] = ("h2h", "spreads", "totals"), regions: str = "us,eu") -> list[dict[str, Any]]:
-        key = (tuple(sorted(markets)), regions)
+    def fetch(self, markets: tuple[str, ...] = ("h2h", "spreads", "totals"), regions: str = "us,eu", sport: str = "nba") -> list[dict[str, Any]]:
+        if sport not in SPORTS:
+            raise ProviderError(f"Bilinmeyen spor: {sport}. Seçenekler: {', '.join(SPORTS)}")
+        key = (sport, tuple(sorted(markets)), regions)
         cached = self._cache.get(key)
         if cached and time.time() - cached[0] < self.cache_seconds:
             return cached[1]
@@ -65,7 +70,7 @@ class TheOddsAPIProvider:
         }
         try:
             resp = httpx.get(
-                f"{self.BASE_URL}/sports/{SPORT_KEY}/odds",
+                f"{self.BASE_URL}/sports/{SPORTS[sport]}/odds",
                 params=params,
                 # Anahtar URL yerine başlıkta gönderilir: loglara/geçmişe düşmez.
                 headers={"x-api-key": self.api_key},

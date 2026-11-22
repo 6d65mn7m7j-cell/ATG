@@ -16,7 +16,8 @@ from .providers import ProviderError, get_provider
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="NBA maçları için değerli bahis bulucu")
+    ap = argparse.ArgumentParser(description="NBA ve NHL maçları için değerli bahis bulucu")
+    ap.add_argument("--sport", choices=("nba", "nhl"), default="nba")
     ap.add_argument("--demo", action="store_true", help="API yerine örnek veriyi kullan")
     ap.add_argument("--min-edge", type=float, default=0.02, help="En düşük EV (0.02 = %%2)")
     ap.add_argument("--devig", choices=om.DEVIG_METHODS, default="power")
@@ -31,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
 
     provider = get_provider(demo=True if args.demo else None)
     try:
-        events = provider.fetch(regions=args.regions)
+        events = provider.fetch(regions=args.regions, sport=args.sport)
     except ProviderError as exc:
         print(f"Hata: {exc}", file=sys.stderr)
         return 1
@@ -55,14 +56,14 @@ def main(argv: list[str] | None = None) -> int:
     if not bets:
         print("Bu kriterlere uyan değerli bahis bulunamadı.")
         return 0
-    header = f"{'Tarih':<12}{'Maç':<44}{'Market':<13}{'Seçim':<28}{'Şirket':<13}{'Oran':>6}{'Adil':>7}{'EV':>8}{'Stake':>9}"
+    header = f"{'Tarih':<12}{'Maç':<44}{'Market':<25}{'Seçim':<28}{'Şirket':<13}{'Oran':>6}{'Adil':>7}{'EV':>8}{'Stake':>9}"
     print(header)
     print("-" * len(header))
     for b in bets:
         when = datetime.fromisoformat(b.commence_time.replace("Z", "+00:00")).strftime("%d.%m %H:%M")
         match = f"{b.away_team} @ {b.home_team}"
         print(
-            f"{when:<12}{match[:43]:<44}{b.market_label:<13}{b.label[:27]:<28}{b.bookmaker_title[:12]:<13}"
+            f"{when:<12}{match[:43]:<44}{b.market_label[:24]:<25}{b.label[:27]:<28}{b.bookmaker_title[:12]:<13}"
             f"{b.price:>6.2f}{b.fair_odds:>7.2f}{b.edge * 100:>7.1f}%{b.stake:>9.2f}"
         )
     s = summarize(events, bets)
