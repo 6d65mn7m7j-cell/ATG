@@ -1,0 +1,35 @@
+name: OddsPapi meta verisi
+
+# Market tanımlarını ve takım adlarını bir kez çekip depoya yazar (yeni sezon/takım değişikliğinde yeniden çalıştırın).
+on:
+  workflow_dispatch:
+    inputs:
+      sample:
+        description: "Test için örnek iddaa/Pinnacle oranlarını da kaydet (+2 istek)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "httpx>=0.27"
+      - name: Meta verisini çek
+        env:
+          ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
+        run: python scripts/oddspapi_meta.py ${{ inputs.sample && '--sample' || '' }}
+      - name: Depoya yaz
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/oddspapi_meta.json tests/data/oddspapi_sample.json 2>/dev/null || git add docs/oddspapi_meta.json
+          git diff --cached --quiet || git commit -m "OddsPapi meta verisini güncelle"
+          git push
