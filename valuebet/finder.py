@@ -20,8 +20,17 @@ MARKET_LABELS = {"h2h": "Maç Sonucu", "spreads": "Handikap", "totals": "Toplam 
 HOCKEY_MARKET_LABELS = {"h2h": "Maç Sonucu (uzt. dahil)", "spreads": "Handikap (uzt. dahil)", "totals": "Toplam Gol (uzt. dahil)"}
 
 
+NFL_MARKET_LABELS = {"h2h": "Maç Sonucu (uzt. dahil)", "spreads": "Handikap", "totals": "Toplam Sayı"}
+
+
 def market_label(event: dict[str, Any], market: str) -> str:
-    labels = HOCKEY_MARKET_LABELS if str(event.get("sport_key", "")).startswith("icehockey") else MARKET_LABELS
+    key = str(event.get("sport_key", ""))
+    if key.startswith("icehockey"):
+        labels = HOCKEY_MARKET_LABELS
+    elif key.startswith("americanfootball"):
+        labels = NFL_MARKET_LABELS
+    else:
+        labels = MARKET_LABELS
     return labels.get(market, market)
 DEFAULT_SHARP_BOOKS = ("pinnacle", "betonlineag", "circasports", "lowvig")
 

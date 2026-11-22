@@ -98,7 +98,7 @@ def test_providers_sport_handling():
 
     assert SampleProvider().fetch(sport="nhl") == []
     with pytest.raises(ProviderError):
-        TheOddsAPIProvider(api_key="x").fetch(sport="nfl")
+        TheOddsAPIProvider(api_key="x").fetch(sport="kriket")
 
 
 def test_hockey_market_labels():

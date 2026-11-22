@@ -1,4 +1,7 @@
-import { findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS } from "./valuebet.js?v=4";
+import {
+  findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
+  legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
+} from "./valuebet.js?v=5";
 
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
 const $ = (s) => document.querySelector(s);
@@ -29,9 +32,12 @@ const settings = {
   ...store.get("settings", {}),
 };
 // Her spor için ayrı son tarama: { events, fetchedAt, source, quota }
-const snapshots = { nba: store.get("snapshot_nba", store.get("snapshot", null)), nhl: store.get("snapshot_nhl", null) };
+const snapshots = Object.fromEntries(Object.keys(SPORTS).map((k) => [k, store.get("snapshot_" + k, k === "nba" ? store.get("snapshot", null) : null)]));
+if (!SPORTS[settings.sport]) settings.sport = "nba";
 let snapshot = snapshots[settings.sport] || null;
 const setSnapshot = (sport, snap) => { snapshots[sport] = snap; store.set("snapshot_" + sport, snap); if (sport === settings.sport) snapshot = snap; };
+let ledger = store.get("ledger", []); // kayıtlı bahisler
+const saveLedger = () => store.set("ledger", ledger);
 let iddaa = store.get("iddaa", {}); // { eventId: { h2h:{home,away}, spreads:{line,home,away}, totals:{line,over,under}, mbs } }
 let error = "";
 let loading = false;
@@ -69,6 +75,7 @@ async function refresh() {
       events = await r.json();
     }
     setSnapshot(sport, { events, fetchedAt: Date.now(), source: settings.demo ? "demo" : "live", quota });
+    if (!settings.demo) updateClosing(events);
   } catch (e) {
     error = e.message === "Failed to fetch" ? "Bağlantı kurulamadı. İnternet bağlantınızı kontrol edin." : e.message;
   } finally {
@@ -76,7 +83,23 @@ async function refresh() {
     $("#refresh").classList.remove("spin");
     render();
     if ($("#v-iddaa").classList.contains("on")) renderGames();
+    if ($("#v-log").classList.contains("on")) renderLog();
   }
+}
+
+// Bekleyen bahislerin "son adil olasılığını" günceller (maç başlamadıysa) -> kapanış değeri (CLV).
+function updateClosing(events) {
+  const byId = new Map(events.map((e) => [e.id, e]));
+  let changed = false;
+  for (const bet of ledger) {
+    for (const leg of bet.legs) {
+      const ev = byId.get(leg.event_id);
+      if (!ev || leg.status !== "pending" || Date.parse(ev.commence_time) <= Date.now()) continue;
+      const p = currentFairProb(ev, leg, engineOptions());
+      if (p) { leg.close_prob = p; leg.close_at = Date.now(); changed = true; }
+    }
+  }
+  if (changed) saveLedger();
 }
 
 // ------------------------------------------------------------ çizim
@@ -120,7 +143,7 @@ function render() {
   }
   $("#meta").textContent = meta.join(" · ") || "Henüz tarama yapılmadı";
   $("#sportName").textContent = SPORTS[settings.sport].name;
-  document.querySelectorAll("[data-sport]").forEach((b) => b.classList.toggle("on", b.dataset.sport === settings.sport));
+  $("#sports").innerHTML = Object.values(SPORTS).map((x) => `<button class="chip ${x.id === settings.sport ? "on" : ""}" data-sport="${x.id}">${x.name}</button>`).join("");
 
   const chips = [["all", "Tümü"], ["h2h", "Maç Sonucu"], ["spreads", "Handikap"], ["totals", "Toplam"]];
   $("#mchips").innerHTML = chips.map(([k, t]) => `<button class="chip ${settings.market === k ? "on" : ""}" data-m="${k}">${t}</button>`).join("");
@@ -150,7 +173,9 @@ function render() {
     : `<div class="empty"><b>Şu an değerli bahis yok</b>Maç günü ${SPORTS[settings.sport].name} oranları genellikle verimlidir. Oranlar açıldığında veya sakatlık haberlerinden sonra tekrar tarayın ya da en düşük EV eşiğini düşürün.</div>`;
 }
 
+let shownBets = [];
 function renderBets(bets) {
+  shownBets = bets;
   return bets.map((b, i) => `
     <article class="card" data-i="${i}">
       <div class="top"><span>${esc(when(b.commence_time))}</span><span>${esc(b.market_label)}</span></div>
@@ -169,6 +194,7 @@ function renderBets(bets) {
         <span>Amerikan oran</span><div>${b.american > 0 ? "+" : ""}${b.american}</div>
         <span>Referans</span><div>${b.reference === "sharp" ? esc(b.reference_books[0]) : `<span class="pill cons">konsensüs · ${b.reference_books.length} şirket</span>`}</div>
         ${b.last_update ? `<span>Oran güncelleme</span><div>${esc(ago(Date.parse(b.last_update)))}</div>` : ""}
+        <button class="btn small" data-save-bet="${i}">Kayda ekle · ${money(b.stake)}</button>
       </div>
     </article>`).join("");
 }
@@ -200,9 +226,9 @@ const get = (o, path) => path.split(".").reduce((x, k) => x?.[k], o);
 
 function renderGames() {
   const box = $("#games");
-  $("#iddaaIntro").textContent = settings.sport === "nhl"
+  $("#iddaaIntro").textContent = SPORTS[settings.sport].model === "hockey"
     ? "iddaa'da buz hokeyi bahisleri normal süre (60 dk) sonucuna göredir: MS ve handikap 1-X-2, alt/üst normal süre golleri. Adil oranlar Pinnacle'ın uzatmalar dahil oranlarından Poisson gol modeliyle türetilir. Handikapta ev sahibinin gol handikabını girin (ör. -1 ya da -1,5). Ondalık için virgül kullanabilirsiniz."
-    : "iddaa'da gördüğünüz oranları girin; Pinnacle'ın marjsız oranıyla karşılaştırılır. Ondalık için virgül kullanabilirsiniz. Basketbolda iddaa oranları uzatmalar dahildir. Çizgi farklıysa (ör. iddaa -2.5, Pinnacle -3.5) adil olasılık istatistiksel olarak düzeltilir.";
+    : `iddaa'da gördüğünüz oranları girin; Pinnacle'ın marjsız oranıyla karşılaştırılır. Ondalık için virgül kullanabilirsiniz. Oranlar uzatmalar dahil, iki yönlü olmalıdır${settings.sport === "nfl" ? " (iddaa'da 3 yönlü/normal süre MS varsa onu girmeyin)" : ""}. Çizgi farklıysa (ör. iddaa -2.5, referans -3.5) adil olasılık istatistiksel olarak düzeltilir.`;
   if (!snapshot) {
     box.innerHTML = `<div class="empty"><b>Önce oranları tarayın</b>Karşılaştırma için Pinnacle oranları gerekir.<button class="btn" data-refresh>Şimdi tara</button></div>`;
     renderCoupons([]);
@@ -224,7 +250,7 @@ function renderGames() {
   box.innerHTML = games.map((g) => {
     const H = short(g.home_team), A = short(g.away_team), id = g.id;
     const mbs = iddaa[id]?.mbs ?? "1";
-    const hockey = settings.sport === "nhl";
+    const hockey = SPORTS[settings.sport].model === "hockey";
     const rows = hockey ? `
       <div class="mk mk5"><span>MS</span><i></i>${inp(id, "h2h.home", "1")}${inp(id, "h2h.draw", "X")}${inp(id, "h2h.away", "2")}</div>
       <div class="mk mk5"><span>Handikap</span>${inp(id, "spreads.line", H + " hnd", "text")}${inp(id, "spreads.home", "1")}${inp(id, "spreads.draw", "X")}${inp(id, "spreads.away", "2")}</div>
@@ -281,6 +307,7 @@ function updateIddaa() {
   renderCoupons(all);
 }
 
+let shownCoupons = [];
 function renderCoupons(selections) {
   const box = $("#coupons");
   if (!selections.length) {
@@ -288,6 +315,7 @@ function renderCoupons(selections) {
     return;
   }
   const coupons = buildCoupons(selections, engineOptions());
+  shownCoupons = coupons;
   if (!coupons.length) {
     box.innerHTML = `<p class="intro">Girilen oranlarla MBS kuralına uyan ve eşiği (%${esc(settings.minEdge)}) geçen kupon yok. iddaa marjı yüksek olduğundan bu sık görülür.</p>`;
     return;
@@ -302,6 +330,7 @@ function renderCoupons(selections) {
         <div>EV<b style="color:var(--good)">+${pct(c.edge)}</b></div>
         <div>Stake<b>${money(c.stake)}</b></div>
       </div>
+      <button class="btn small" data-save-coupon="${i}">Kayda ekle · ${money(c.stake)}</button>
     </article>`).join("") + `<p class="intro">Kupon olasılığı maçların bağımsız olduğu varsayımıyla hesaplanır. Bahisten önce oranların değişmediğini iddaa'da kontrol edin.</p>`;
 }
 
@@ -313,6 +342,182 @@ document.addEventListener("input", (e) => {
   if (b) { iddaa[id][a] ||= {}; iddaa[id][a][b] = t.value; } else iddaa[id][a] = t.value;
   store.set("iddaa", iddaa);
   updateIddaa();
+});
+
+// ------------------------------------------------------------ bahis kaydı
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+function toast(msg) {
+  const el = $("#toast");
+  el.textContent = msg; el.classList.add("on");
+  clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("on"), 2200);
+}
+const findEvent = (id) => { for (const sn of Object.values(snapshots)) { const e = sn?.events.find((x) => x.id === id); if (e) return e; } return null; };
+
+function addBet(legs, stake, ev, source) {
+  const key = legs.map((l) => `${l.event_id}|${l.market}|${l.side}|${l.line}|${l.odds}`).sort().join(";");
+  if (ledger.some((b) => b.key === key && b.status === "pending")) { toast("Bu bahis zaten kayıtlı"); return; }
+  ledger.unshift({
+    id: uid(), key, created_at: Date.now(), source, legs, stake: Number(stake) || 0,
+    odds: Math.round(legs.reduce((x, l) => x * l.odds, 1) * 100) / 100, ev, status: "pending", profit: 0,
+  });
+  saveLedger();
+  toast("Kayda eklendi");
+}
+function saveValueBet(b) {
+  if (!b) return;
+  if (snapshot?.source === "demo") { toast("Demo bahisleri kaydedilmez"); return; }
+  addBet([legFromBet(b, settings.sport)], b.stake, b.edge, "book");
+}
+function saveCoupon(c) {
+  if (!c) return;
+  const legs = c.legs.map((x) => { const ev = findEvent(x.event_id); return ev ? legFromIddaa(x, ev) : null; });
+  if (legs.some((l) => !l)) { toast("Maç verisi bulunamadı"); return; }
+  addBet(legs, c.stake, c.edge, "iddaa");
+}
+
+let logFilter = "all";
+function renderLog() {
+  const st = ledgerStats(ledger);
+  const sign = (x) => (x > 0 ? "+" : "") + money(x);
+  $("#logstats").innerHTML = [
+    ["Kâr / zarar", `<span class="${st.profit > 0 ? "posv" : st.profit < 0 ? "negv" : ""}">${sign(st.profit)}</span>`, `${st.settled} sonuçlanan · ${st.pending} bekleyen`],
+    ["ROI", pct(st.roi), `stake ${money(st.staked)}`],
+    ["Kazanma", pct(st.win_rate), `beklenen kâr ${sign(st.expected_profit)}`],
+    ["Ort. EV", pct(st.avg_ev), "bahis anında"],
+    ["Ort. CLV", st.avg_clv == null ? "–" : pct(st.avg_clv), st.clv_count ? `${st.clv_count} bahiste` : "tarama gerekir"],
+    ["Bekleyen", money(st.pending_stake), "açık stake"],
+  ].map(([t, v, sub]) => `<div class="stat"><small>${t}</small><b>${v}</b><small>${sub}</small></div>`).join("");
+  $("#logchart").innerHTML = profitChart(ledger);
+
+  const filters = [["all", "Tümü"], ["pending", "Bekleyen"], ["settled", "Sonuçlanan"]];
+  $("#logchips").innerHTML = filters.map(([k, t]) => `<button class="chip ${logFilter === k ? "on" : ""}" data-log="filter" data-id="${k}">${t}</button>`).join("");
+  const rows = ledger.filter((b) => logFilter === "all" || (logFilter === "pending" ? b.status === "pending" : b.status !== "pending"));
+  const label = { pending: "Bekliyor", won: "Kazandı", lost: "Kaybetti", push: "İade" };
+  const icon = { pending: "•", won: "✓", lost: "✕", push: "↺" };
+  $("#loglist").innerHTML = rows.length ? rows.map((b) => {
+    const clv = betClv(b);
+    const single = b.legs.length === 1;
+    return `<article class="card logcard st-${b.status}">
+      <div class="top"><span>${esc(new Date(b.created_at).toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))} · ${b.source === "iddaa" ? "iddaa" : esc(b.legs[0].bookmaker)}</span><span class="pill status">${label[b.status]}</span></div>
+      <div class="legs">${b.legs.map((l) => `<div><span><i class="li li-${l.status}">${icon[l.status]}</i> ${esc(l.label)}<br><small>${esc(SPORTS[l.sport]?.name || "")} · ${esc(l.home)} – ${esc(l.away)} · ${esc(l.market_label)}</small></span><b>${l.odds.toFixed(2)}</b></div>`).join("")}</div>
+      <div class="sum">
+        <div>Stake<b>${money(b.stake)}</b></div>
+        <div>Oran<b>${b.odds.toFixed(2)}</b></div>
+        <div>EV<b>${b.ev == null ? "–" : pct(b.ev)}</b></div>
+        <div>CLV<b class="${clv > 0 ? "posv" : clv < 0 ? "negv" : ""}">${clv == null ? "–" : (clv > 0 ? "+" : "") + pct(clv)}</b></div>
+        ${b.status !== "pending" ? `<div>Sonuç<b class="${b.profit > 0 ? "posv" : b.profit < 0 ? "negv" : ""}">${sign(b.profit)}</b></div>` : ""}
+      </div>
+      ${b.status === "pending" ? `
+      <div class="edit">
+        <label>Stake<input data-log-edit="stake" data-id="${b.id}" inputmode="decimal" value="${b.stake}"></label>
+        ${single ? `<label>Oran<input data-log-edit="odds" data-id="${b.id}" inputmode="decimal" value="${b.legs[0].odds}"></label>` : ""}
+      </div>
+      <div class="actions">
+        <button data-log="won" data-id="${b.id}">Kazandı</button><button data-log="lost" data-id="${b.id}">Kaybetti</button><button data-log="push" data-id="${b.id}">İade</button><button data-log="del" data-id="${b.id}" class="del">Sil</button>
+      </div>` : `<div class="actions"><button data-log="reopen" data-id="${b.id}">Geri al</button><button data-log="del" data-id="${b.id}" class="del">Sil</button></div>`}
+    </article>`;
+  }).join("") : `<div class="empty"><b>Henüz kayıt yok</b>Bahisler sekmesinde bir bahsin ayrıntısını açıp ya da iddaa kupon önerilerinde "Kayda ekle"ye dokunun.</div>`;
+}
+
+function profitChart(bets) {
+  const settled = bets.filter((b) => b.status !== "pending").sort((a, b) => (a.settled_at || 0) - (b.settled_at || 0));
+  if (settled.length < 2) return "";
+  let c = 0;
+  const pts = [0, ...settled.map((b) => (c += b.profit || 0))];
+  const W = 320, H = 70, min = Math.min(...pts), max = Math.max(...pts), span = max - min || 1;
+  const xy = pts.map((v, i) => `${(i / (pts.length - 1)) * W},${H - ((v - min) / span) * (H - 8) - 4}`).join(" ");
+  const zero = H - ((0 - min) / span) * (H - 8) - 4;
+  const col = c >= 0 ? "var(--good)" : "var(--bad)";
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-label="Kümülatif kâr"><line x1="0" x2="${W}" y1="${zero}" y2="${zero}" stroke="var(--line)" stroke-dasharray="3 3"/><polyline points="${xy}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg><small>Kümülatif kâr · ${settled.length} bahis</small>`;
+}
+
+function logAction(action, id) {
+  if (action === "filter") { logFilter = id; renderLog(); return; }
+  if (action === "settle") { settleFromScores(); return; }
+  if (action === "csv") { exportCsv(); return; }
+  if (action === "backup") { download(`bahis-yedek-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(ledger, null, 1), "application/json"); return; }
+  if (action === "restore") { $("#restoreFile").click(); return; }
+  const bet = ledger.find((b) => b.id === id);
+  if (!bet) return;
+  if (action === "del") { if (!confirm("Bu kayıt silinsin mi?")) return; ledger = ledger.filter((b) => b.id !== id); }
+  else if (action === "reopen") { bet.status = "pending"; bet.profit = 0; bet.settled_at = null; bet.legs.forEach((l) => (l.status = "pending")); }
+  else {
+    // Elle sonuç: bekleyen ayaklar (tekli bahiste tek ayak) seçilen sonuca çekilir.
+    bet.legs.forEach((l) => { if (l.status === "pending" || bet.legs.length === 1) l.status = action; });
+    Object.assign(bet, betOutcome(bet), { settled_at: Date.now() });
+  }
+  saveLedger(); renderLog();
+}
+
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.dataset?.logEdit) {
+    const bet = ledger.find((b) => b.id === t.dataset.id);
+    const v = Number(String(t.value).replace(",", "."));
+    if (!bet || !(v > 0)) return;
+    if (t.dataset.logEdit === "stake") bet.stake = v;
+    else if (v > 1) { bet.legs[0].odds = v; bet.odds = v; }
+    saveLedger(); renderLog();
+  }
+});
+
+async function settleFromScores() {
+  const pend = ledger.filter((b) => b.status === "pending");
+  const legs = pend.flatMap((b) => b.legs).filter((l) => l.status === "pending" && !l.regulation && Date.parse(l.commence_time) < Date.now() - 2.5 * 3600e3);
+  const sports = [...new Set(legs.map((l) => l.sport))];
+  const manual = pend.flatMap((b) => b.legs).filter((l) => l.status === "pending" && l.regulation).length;
+  if (!sports.length) { toast(manual ? "Hokey (normal süre) bahislerini elle sonuçlandırın" : "Sonuçlanacak bitmiş maç yok"); return; }
+  if (!settings.apiKey) { toast("API anahtarı gerekli"); return; }
+  const btn = $("#settleBtn"); btn.disabled = true;
+  let done = 0;
+  try {
+    for (const sp of sports) {
+      const r = await fetch(`https://api.the-odds-api.com/v4/sports/${SPORTS[sp].key}/scores?daysFrom=3&dateFormat=iso`, { headers: { "x-api-key": settings.apiKey.trim() } });
+      if (!r.ok) throw new Error(`Skor servisi hata verdi (${r.status})`);
+      const games = new Map((await r.json()).map((g) => [g.id, g]));
+      for (const l of legs.filter((x) => x.sport === sp)) {
+        const res = settleLeg(l, games.get(l.event_id));
+        if (res) { l.status = res; done++; }
+      }
+    }
+    for (const b of pend) {
+      const o = betOutcome(b);
+      if (o.status !== "pending") Object.assign(b, o, { settled_at: Date.now() });
+    }
+    saveLedger(); renderLog();
+    toast(done ? `${done} seçim sonuçlandı` : "Henüz biten maç sonucu yok");
+  } catch (err) { toast(err.message); }
+  finally { btn.disabled = false; }
+}
+
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+function exportCsv() {
+  const head = ["tarih", "kaynak", "spor", "mac", "secim", "market", "oran", "stake", "ev", "clv", "durum", "kar"];
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const rows = ledger.map((b) => [
+    new Date(b.created_at).toISOString(), b.source === "iddaa" ? "iddaa" : b.legs[0].bookmaker,
+    [...new Set(b.legs.map((l) => SPORTS[l.sport]?.name))].join("+"), b.legs.map((l) => `${l.home} - ${l.away}`).join(" | "),
+    b.legs.map((l) => l.label).join(" | "), b.legs.map((l) => l.market_label).join(" | "),
+    b.odds, b.stake, b.ev ?? "", betClv(b) ?? "", b.status, b.profit ?? 0,
+  ].map(q).join(","));
+  download(`bahisler-${new Date().toISOString().slice(0, 10)}.csv`, "\ufeff" + [head.join(","), ...rows].join("\n"), "text/csv");
+}
+$("#restoreFile").addEventListener("change", async (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!Array.isArray(data) || data.some((b) => !b.id || !Array.isArray(b.legs))) throw new Error();
+    const ids = new Set(ledger.map((b) => b.id));
+    ledger = [...data.filter((b) => !ids.has(b.id)), ...ledger].sort((a, b) => b.created_at - a.created_at);
+    saveLedger(); renderLog(); toast(`${data.length} kayıt yüklendi`);
+  } catch { toast("Yedek dosyası okunamadı"); }
+  e.target.value = "";
 });
 
 // ------------------------------------------------------------ olaylar
@@ -330,7 +535,7 @@ function bindSettings() {
   }
   const demo = $("#demo");
   demo.checked = settings.demo;
-  demo.addEventListener("change", () => { settings.demo = demo.checked; saveSettings(); setSnapshot("nba", null); setSnapshot("nhl", null); refresh(); });
+  demo.addEventListener("change", () => { settings.demo = demo.checked; saveSettings(); for (const k of Object.keys(SPORTS)) setSnapshot(k, null); refresh(); });
 }
 
 function show(view) {
@@ -338,18 +543,23 @@ function show(view) {
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
   if (view === "v-settings") renderBooks();
   if (view === "v-iddaa") renderGames();
+  if (view === "v-log") renderLog();
   window.scrollTo(0, 0);
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-sport],[data-m],[data-view],[data-go],[data-refresh],[data-clear],.card");
-  if (!t || t.classList.contains("game") || t.classList.contains("coupon")) return;
+  const t = e.target.closest("[data-sport],[data-m],[data-view],[data-go],[data-refresh],[data-clear],[data-save-bet],[data-save-coupon],[data-log],.card");
+  if (!t || t.classList.contains("game") || t.classList.contains("coupon") || t.classList.contains("logcard")) return;
+  if (t.dataset.saveBet != null) { saveValueBet(shownBets[Number(t.dataset.saveBet)]); return; }
+  if (t.dataset.saveCoupon != null) { saveCoupon(shownCoupons[Number(t.dataset.saveCoupon)]); return; }
+  if (t.dataset.log) { logAction(t.dataset.log, t.dataset.id); return; }
   if (t.dataset.sport) {
     settings.sport = t.dataset.sport; saveSettings();
     snapshot = snapshots[settings.sport] || null; error = "";
     render();
     if ($("#v-iddaa").classList.contains("on")) renderGames();
     if ($("#v-settings").classList.contains("on")) renderBooks();
+    window.scrollTo(0, 0);
     if (!snapshot && (settings.apiKey || settings.demo)) refresh();
   } else if (t.dataset.clear) { delete iddaa[t.dataset.clear]; store.set("iddaa", iddaa); renderGames(); }
   else if (t.dataset.m) { settings.market = t.dataset.m; saveSettings(); render(); }

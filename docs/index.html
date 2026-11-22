@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>NBA & NHL Value</title>
-<meta name="description" content="NBA ve NHL maçları için değerli bahis bulucu">
+<title>Value Bet</title>
+<meta name="description" content="NBA, NHL, EuroLeague ve NFL için değerli bahis bulucu">
 <meta name="theme-color" content="#11141b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -117,6 +117,42 @@
   .mk5 { grid-template-columns: 64px 1.15fr 1fr 1fr 1fr; gap: 5px; }
   .mk5 input { padding: 7px 3px; }
   h1 .sp { color: var(--text); }
+  header .sports { margin: 8px -16px 0; }
+  header .chip { padding: 5px 11px; font-size: 13px; font-weight: 600; }
+  .stats.six { grid-template-columns: repeat(3, 1fr); }
+  .stats .posv, .posv { color: var(--good); }
+  .stats .negv, .negv { color: var(--bad); }
+  .chart { margin: 0 0 12px; }
+  .chart:empty { display: none; }
+  .chart svg { width: 100%; height: 70px; display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+  .chart small { color: var(--muted); font-size: 11px; }
+  .toolbar .btn { margin-top: 0; }
+  .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .row3 .btn { padding: 10px 4px; font-size: 13px; }
+  .toolbar .intro { margin-top: 10px; }
+  .btn.small { grid-column: 1 / -1; padding: 10px; font-size: 14px; margin-top: 6px; }
+  .btn:disabled { opacity: .6; }
+  .logcard .legs { margin: 6px 0 10px; display: grid; gap: 4px; font-size: 13px; }
+  .logcard .legs div { display: flex; justify-content: space-between; gap: 8px; }
+  .logcard .legs small { color: var(--muted); }
+  .logcard .sum { display: flex; gap: 6px; flex-wrap: wrap; }
+  .logcard .sum div { flex: 1; min-width: 58px; background: var(--bg); border-radius: 10px; padding: 6px 8px; font-size: 11px; color: var(--muted); }
+  .logcard .sum b { display: block; font-size: 14px; color: var(--text); font-variant-numeric: tabular-nums; }
+  .logcard .sum b.posv { color: var(--good); } .logcard .sum b.negv { color: var(--bad); }
+  .li { font-style: normal; display: inline-block; width: 16px; text-align: center; color: var(--muted); }
+  .li-won { color: var(--good); } .li-lost { color: var(--bad); }
+  .st-won .pill.status { background: var(--good-bg); color: var(--good); }
+  .st-lost .pill.status { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+  .st-pending .pill.status { background: var(--warn-bg); color: var(--warn); }
+  .edit { display: flex; gap: 8px; margin-top: 10px; }
+  .edit label { flex: 1; font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  .edit input { font: inherit; font-size: 16px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 6px 8px; width: 100%; }
+  .actions { display: flex; gap: 6px; margin-top: 10px; }
+  .actions button { flex: 1; border: 0; border-radius: 10px; padding: 9px 4px; font: inherit; font-size: 13px; font-weight: 600; background: var(--chip); color: var(--text); }
+  .actions button.del { flex: .7; color: var(--bad); }
+  #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); opacity: 0;
+    background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; transition: .2s; pointer-events: none; z-index: 10; }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
   .seg { display: flex; background: var(--chip); border-radius: 10px; padding: 3px; gap: 2px; }
   .seg button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; padding: 6px 11px; border-radius: 8px; }
   .seg button.on { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
@@ -147,11 +183,11 @@
 <header>
   <div class="bar">
     <h1><span id="sportName" class="sp">NBA</span> <span>Value</span></h1>
-    <div class="seg" role="tablist" aria-label="Spor"><button data-sport="nba" class="on">NBA</button><button data-sport="nhl">NHL</button></div>
     <button id="refresh" class="iconbtn" aria-label="Oranları yenile">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
     </button>
   </div>
+  <div class="chips sports" id="sports" role="tablist" aria-label="Lig"></div>
   <div class="meta" id="meta">&nbsp;</div>
 </header>
 
@@ -168,6 +204,23 @@
     <div id="games"></div>
     <h2 class="sec">Kupon önerileri</h2>
     <div id="coupons"></div>
+  </section>
+
+  <section id="v-log" class="view">
+    <div class="stats six" id="logstats"></div>
+    <div class="chart" id="logchart"></div>
+    <div class="toolbar">
+      <button class="btn" id="settleBtn" data-log="settle">Sonuçları güncelle</button>
+      <div class="row3">
+        <button class="btn ghost" data-log="csv">CSV indir</button>
+        <button class="btn ghost" data-log="backup">Yedekle</button>
+        <button class="btn ghost" data-log="restore">Geri yükle</button>
+      </div>
+      <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+      <p class="intro">"Sonuçları güncelle" biten maçların skorlarını çeker (lig başına 2 API isteği) ve bahisleri otomatik sonuçlandırır. iddaa hokey (normal süre) bahislerini elle sonuçlandırın. CLV: aldığınız oranın, maç başlamadan önceki son taramadaki adil olasılığa göre değeri; pozitif CLV uzun vadede kârın en güvenilir göstergesidir. Kayıtlar yalnızca bu cihazdadır, düzenli yedek alın.</p>
+    </div>
+    <div class="chips" id="logchips"></div>
+    <div id="loglist"></div>
   </section>
 
   <section id="v-settings" class="view">
@@ -234,11 +287,15 @@
   <button data-view="v-iddaa">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>iddaa
   </button>
+  <button data-view="v-log">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Kayıt
+  </button>
   <button data-view="v-settings">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Ayarlar
   </button>
 </nav>
 
-<script type="module" src="main.js?v=4"></script>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="main.js?v=5"></script>
 </body>
 </html>

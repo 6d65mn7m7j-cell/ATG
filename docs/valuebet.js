@@ -238,7 +238,7 @@ export function evaluateIddaa(event, entry, options = {}) {
     if (odds == null || p == null) return;
     res.push({
       event_id: event.id, match: `${H} – ${A}`, commence_time: event.commence_time, market,
-      market_label: MARKET_LABELS[market], side, label, odds, fair_probability: r(p), fair_odds: r(1 / p, 3),
+      market_label: MARKET_LABELS[market], side, line: market === "h2h" ? null : parseLine(e[market]?.line), label, odds, fair_probability: r(p), fair_odds: r(1 / p, 3),
       edge: r(p * odds - 1), reference: ref.kind, reference_books: ref.books, reference_line: ref.line, adjusted,
       mbs: Number(entry.mbs) || 1,
     });
@@ -257,8 +257,9 @@ export function evaluateIddaa(event, entry, options = {}) {
     const ref = line == null ? null : pickReference(referenceLines(event, "spreads", cfg), line);
     if (ref) {
       // Ev sahibi farkı M ~ N(mu, SD). Ev sahibi h handikabıyla kazanır: M + h > 0.
-      const mu = SPREAD_SD * normInv(ref.probs[H]) - ref.line;
-      const pHome = normCdf((mu + line) / SPREAD_SD);
+      const sd = sportOf(event).spreadSd || SPREAD_SD;
+      const mu = sd * normInv(ref.probs[H]) - ref.line;
+      const pHome = normCdf((mu + line) / sd);
       const adj = ref.line !== line;
       const fmt = (x) => (x > 0 ? "+" : "") + x;
       push("spreads", "home", `${H} ${fmt(line)}`, parseOdds(e.spreads.home), pHome, ref, adj);
@@ -269,8 +270,9 @@ export function evaluateIddaa(event, entry, options = {}) {
     const line = parseLine(e.totals.line);
     const ref = line == null ? null : pickReference(referenceLines(event, "totals", cfg), line);
     if (ref) {
-      const mu = ref.line + TOTAL_SD * normInv(ref.probs.Over);
-      const pOver = normCdf((mu - line) / TOTAL_SD);
+      const sd = sportOf(event).totalSd || TOTAL_SD;
+      const mu = ref.line + sd * normInv(ref.probs.Over);
+      const pOver = normCdf((mu - line) / sd);
       const adj = ref.line !== line;
       push("totals", "over", `Üst ${line}`, parseOdds(e.totals.over), pOver, ref, adj);
       push("totals", "under", `Alt ${line}`, parseOdds(e.totals.under), 1 - pOver, ref, adj);
@@ -323,17 +325,22 @@ export function buildCoupons(selections, options = {}) {
 }
 
 // ================================================================ sporlar
+// spreadSd / totalSd: iddaa çizgisi referanstan farklıysa kullanılan normal dağılım sapmaları (yaklaşık).
+const BASKET = { h2h: "Maç Sonucu", spreads: "Handikap", totals: "Toplam Sayı" };
 export const SPORTS = {
-  nba: {
-    id: "nba", key: "basketball_nba", name: "NBA",
-    labels: { h2h: "Maç Sonucu", spreads: "Handikap", totals: "Toplam Sayı" },
+  nba: { id: "nba", key: "basketball_nba", name: "NBA", labels: BASKET, spreadSd: 12.5, totalSd: 18.5, model: "normal" },
+  euroleague: { id: "euroleague", key: "basketball_euroleague", name: "EuroLeague", labels: BASKET, spreadSd: 11.5, totalSd: 15.5, model: "normal" },
+  nfl: {
+    id: "nfl", key: "americanfootball_nfl", name: "NFL", spreadSd: 13.5, totalSd: 13.5, model: "normal",
+    labels: { h2h: "Maç Sonucu (uzt. dahil)", spreads: "Handikap", totals: "Toplam Sayı" },
   },
   nhl: {
-    id: "nhl", key: "icehockey_nhl", name: "NHL",
+    id: "nhl", key: "icehockey_nhl", name: "NHL", model: "hockey",
     labels: { h2h: "Maç Sonucu (uzt. dahil)", spreads: "Handikap (uzt. dahil)", totals: "Toplam Gol (uzt. dahil)" },
   },
 };
-export const sportOf = (event) => (String(event.sport_key || "").startsWith("icehockey") ? SPORTS.nhl : SPORTS.nba);
+const BY_KEY = Object.fromEntries(Object.values(SPORTS).map((x) => [x.key, x]));
+export const sportOf = (event) => BY_KEY[event.sport_key] || SPORTS.nba;
 
 // ================================================================ hokey modeli (Poisson)
 // Normal süre golleri bağımsız Poisson; beraberlik olasılığı NHL gerçeğine (~%22-23) göre şişirilir.
@@ -397,41 +404,139 @@ export function evaluateIddaaHockey(event, entry, options = {}) {
   const model = hockeyModel(event, options);
   if (!model) return [];
   const { M } = model, H = event.home_team, A = event.away_team, e = entry || {};
+  const h = e.spreads ? parseLine(e.spreads.line) : null;
+  const L = e.totals ? parseLine(e.totals.line) : null;
   const res = [];
-  const push = (market, label, odds, win, pushP = 0) => {
+  const push = (market, side, label, odds, win, pushP = 0) => {
     if (odds == null) return;
     const p = win + pushP / odds; // iade olasılığını içeren etkin olasılık: EV = p*o - 1
     res.push({
       event_id: event.id, match: `${H} – ${A}`, commence_time: event.commence_time, market,
       market_label: { h2h: "Maç Sonucu (normal süre)", spreads: "Handikap (normal süre)", totals: "Alt/Üst (normal süre)" }[market],
-      side: label, label, odds, fair_probability: r(p), fair_odds: r((1 - pushP) / win, 3), edge: r(p * odds - 1),
+      side, line: market === "h2h" ? null : market === "spreads" ? h : L, label, odds, fair_probability: r(p), fair_odds: r((1 - pushP) / win, 3), edge: r(p * odds - 1),
       reference: model.reference, reference_books: model.books, reference_line: null, adjusted: true, model: true,
       mbs: Number(e.mbs) || 1,
     });
   };
   if (e.h2h) {
-    push("h2h", `1 · ${H}`, parseOdds(e.h2h.home), sumWhere(M, (i, j) => i > j));
-    push("h2h", "X · Beraberlik", parseOdds(e.h2h.draw), sumWhere(M, (i, j) => i === j));
-    push("h2h", `2 · ${A}`, parseOdds(e.h2h.away), sumWhere(M, (i, j) => i < j));
+    push("h2h", "home", `1 · ${H}`, parseOdds(e.h2h.home), sumWhere(M, (i, j) => i > j));
+    push("h2h", "draw", "X · Beraberlik", parseOdds(e.h2h.draw), sumWhere(M, (i, j) => i === j));
+    push("h2h", "away", `2 · ${A}`, parseOdds(e.h2h.away), sumWhere(M, (i, j) => i < j));
   }
-  const h = e.spreads ? parseLine(e.spreads.line) : null;
   if (h != null) {
     const d = (i, j) => i - j + h;
     const f = (x) => (x > 0 ? "+" : "") + x;
-    push("spreads", `${H} (${f(h)})`, parseOdds(e.spreads.home), sumWhere(M, (i, j) => d(i, j) > 0));
-    if (Number.isInteger(h)) push("spreads", `X (${f(h)})`, parseOdds(e.spreads.draw), sumWhere(M, (i, j) => d(i, j) === 0));
-    push("spreads", `${A} (${f(-h)})`, parseOdds(e.spreads.away), sumWhere(M, (i, j) => d(i, j) < 0));
+    push("spreads", "home", `${H} (${f(h)})`, parseOdds(e.spreads.home), sumWhere(M, (i, j) => d(i, j) > 0));
+    if (Number.isInteger(h)) push("spreads", "draw", `X (${f(h)})`, parseOdds(e.spreads.draw), sumWhere(M, (i, j) => d(i, j) === 0));
+    push("spreads", "away", `${A} (${f(-h)})`, parseOdds(e.spreads.away), sumWhere(M, (i, j) => d(i, j) < 0));
   }
-  const L = e.totals ? parseLine(e.totals.line) : null;
   if (L != null) {
     const pushP = sumWhere(M, (i, j) => i + j === L);
-    push("totals", `Üst ${L}`, parseOdds(e.totals.over), sumWhere(M, (i, j) => i + j > L), pushP);
-    push("totals", `Alt ${L}`, parseOdds(e.totals.under), sumWhere(M, (i, j) => i + j < L), pushP);
+    push("totals", "over", `Üst ${L}`, parseOdds(e.totals.over), sumWhere(M, (i, j) => i + j > L), pushP);
+    push("totals", "under", `Alt ${L}`, parseOdds(e.totals.under), sumWhere(M, (i, j) => i + j < L), pushP);
   }
   return res;
 }
 
 /** Spora göre doğru iddaa değerlendiricisini seçer. */
 export function evaluateIddaaAny(event, entry, options = {}) {
-  return sportOf(event).id === "nhl" ? evaluateIddaaHockey(event, entry, options) : evaluateIddaa(event, entry, options);
+  return sportOf(event).model === "hockey" ? evaluateIddaaHockey(event, entry, options) : evaluateIddaa(event, entry, options);
+}
+
+// ================================================================ bahis kaydı
+// Ortak "ayak" (leg) biçimi: { sport, event_id, commence_time, home, away, market, side, line, label, odds,
+//   source: "book"|"iddaa", bookmaker, regulation, fair_prob, close_prob, status }
+// side: home | away | draw | over | under; line: handikapta EV SAHİBİ çizgisi, toplamda toplam çizgisi.
+
+/** Değerli bahis (şirket) satırını ayağa çevirir. */
+export function legFromBet(b, sportId) {
+  const side = b.selection === b.home_team ? "home" : b.selection === b.away_team ? "away" : b.selection === "Over" ? "over" : "under";
+  const line = b.market === "h2h" ? null : b.market === "totals" ? b.point : side === "home" ? b.point : -b.point;
+  return {
+    sport: sportId, event_id: b.event_id, commence_time: b.commence_time, home: b.home_team, away: b.away_team,
+    market: b.market, market_label: b.market_label, side, line, label: b.label, odds: b.price, source: "book",
+    bookmaker: b.bookmaker_title, regulation: false, fair_prob: b.fair_probability, close_prob: null, status: "pending",
+  };
+}
+
+/** iddaa değerlendirme satırını ayağa çevirir. */
+export function legFromIddaa(x, event) {
+  const sp = sportOf(event);
+  return {
+    sport: sp.id, event_id: x.event_id, commence_time: x.commence_time, home: event.home_team, away: event.away_team,
+    market: x.market, market_label: x.market_label, side: x.side, line: x.line ?? null, label: x.label, odds: x.odds,
+    source: "iddaa", bookmaker: "iddaa", regulation: sp.model === "hockey", fair_prob: x.fair_probability, close_prob: null,
+    status: "pending",
+  };
+}
+
+/** Bir ayağın güncel adil olasılığı (maç başlamadan son görülen = kapanış değeri takibi için). */
+export function currentFairProb(event, leg, options = {}) {
+  if (leg.source === "iddaa") {
+    const slot = { line: leg.line == null ? "" : String(leg.line), [leg.side]: String(leg.odds) };
+    const rows = evaluateIddaaAny(event, { [leg.market]: slot }, options);
+    return rows.find((r) => r.market === leg.market && r.side === leg.side)?.fair_probability ?? null;
+  }
+  const lineId = leg.market === "h2h" ? null : leg.line;
+  const ref = referenceLines(event, leg.market, options).find((x) => (x.line ?? null) === lineId);
+  if (!ref) return null;
+  const name = { home: event.home_team, away: event.away_team, over: "Over", under: "Under" }[leg.side];
+  return ref.probs[name] ?? null;
+}
+
+/** Skor verisinden ayağı sonuçlandırır: "won" | "lost" | "push" | null (bitmemiş ya da elle sonuçlanmalı). */
+export function settleLeg(leg, game) {
+  if (!game || !game.completed || !Array.isArray(game.scores) || leg.regulation) return null;
+  const score = (team) => Number(game.scores.find((s) => s.name === team)?.score);
+  const hs = score(leg.home), as = score(leg.away);
+  if (!Number.isFinite(hs) || !Number.isFinite(as)) return null;
+  const cmp = (x) => (x > 0 ? "won" : x < 0 ? "lost" : "push");
+  if (leg.market === "h2h") {
+    if (leg.side === "draw") return hs === as ? "won" : "lost";
+    return cmp(leg.side === "home" ? hs - as : as - hs);
+  }
+  if (leg.market === "spreads") {
+    const d = hs - as + leg.line;
+    return leg.side === "home" ? cmp(d) : leg.side === "away" ? cmp(-d) : d === 0 ? "won" : "lost";
+  }
+  if (leg.market === "totals") {
+    const t = hs + as - leg.line;
+    return cmp(leg.side === "over" ? t : -t);
+  }
+  return null;
+}
+
+/** Ayak durumlarından kuponun durumunu ve kârını hesaplar. */
+export function betOutcome(bet) {
+  const st = bet.legs.map((l) => l.status);
+  if (st.includes("lost")) return { status: "lost", profit: -bet.stake };
+  if (st.includes("pending")) return { status: "pending", profit: 0 };
+  if (st.every((s) => s === "push")) return { status: "push", profit: 0 };
+  const odds = bet.legs.reduce((x, l) => x * (l.status === "push" ? 1 : l.odds), 1);
+  return { status: "won", profit: r(bet.stake * (odds - 1), 2) };
+}
+
+/** Kayıt istatistikleri. */
+export function ledgerStats(bets) {
+  const settled = bets.filter((b) => ["won", "lost", "push"].includes(b.status));
+  const pending = bets.filter((b) => b.status === "pending");
+  const staked = settled.reduce((s, b) => s + b.stake, 0);
+  const profit = settled.reduce((s, b) => s + (b.profit || 0), 0);
+  const clv = bets.map(betClv).filter((x) => x != null);
+  const decided = settled.filter((b) => b.status !== "push");
+  return {
+    count: bets.length, settled: settled.length, pending: pending.length,
+    pending_stake: r(pending.reduce((s, b) => s + b.stake, 0), 2),
+    staked: r(staked, 2), profit: r(profit, 2), roi: staked ? r(profit / staked) : 0,
+    win_rate: decided.length ? r(decided.filter((b) => b.status === "won").length / decided.length) : 0,
+    avg_ev: bets.length ? r(bets.reduce((s, b) => s + (b.ev || 0), 0) / bets.length) : 0,
+    avg_clv: clv.length ? r(clv.reduce((a, b) => a + b, 0) / clv.length) : null, clv_count: clv.length,
+    expected_profit: r(settled.reduce((s, b) => s + b.stake * (b.ev || 0), 0), 2),
+  };
+}
+
+/** Kapanış oranına göre değer: alınan oran × son adil olasılık − 1 (tüm ayaklarda biliniyorsa). */
+export function betClv(bet) {
+  if (!bet.legs.every((l) => l.close_prob)) return null;
+  return r(bet.legs.reduce((x, l) => x * l.odds * l.close_prob, 1) - 1);
 }

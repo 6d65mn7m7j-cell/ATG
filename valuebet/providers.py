@@ -15,7 +15,12 @@ from typing import Any
 import httpx
 
 SAMPLE_PATH = Path(__file__).parent / "data" / "sample_odds.json"
-SPORTS = {"nba": "basketball_nba", "nhl": "icehockey_nhl"}
+SPORTS = {
+    "nba": "basketball_nba",
+    "nhl": "icehockey_nhl",
+    "euroleague": "basketball_euroleague",
+    "nfl": "americanfootball_nfl",
+}
 SPORT_KEY = SPORTS["nba"]
 
 

@@ -125,3 +125,49 @@ test("evaluateIddaaAny spora göre yönlendirir", () => {
   assert.ok(evaluateIddaaAny(nhl, { h2h: { home: "2,5", draw: "4", away: "2,5" } }).every((r) => r.model));
   assert.equal(hockeyModel({ ...nhl, bookmakers: [] }), null);
 });
+
+import { legFromBet, legFromIddaa, settleLeg, betOutcome, ledgerStats, betClv, currentFairProb, sportOf, evaluateIddaa as evalB } from "../../docs/valuebet.js";
+
+const game = (hs, as) => ({ completed: true, home_team: "Home", away_team: "Away", scores: [{ name: "Home", score: String(hs) }, { name: "Away", score: String(as) }] });
+const L = (o) => ({ home: "Home", away: "Away", regulation: false, status: "pending", odds: 2, ...o });
+
+test("sonuçlandırma: maç sonucu, handikap, toplam, iade", () => {
+  assert.equal(settleLeg(L({ market: "h2h", side: "home" }), game(100, 90)), "won");
+  assert.equal(settleLeg(L({ market: "h2h", side: "away" }), game(100, 90)), "lost");
+  assert.equal(settleLeg(L({ market: "spreads", side: "home", line: -4.5 }), game(100, 96)), "lost");
+  assert.equal(settleLeg(L({ market: "spreads", side: "away", line: -4.5 }), game(100, 96)), "won");
+  assert.equal(settleLeg(L({ market: "spreads", side: "home", line: -4 }), game(100, 96)), "push");
+  assert.equal(settleLeg(L({ market: "totals", side: "over", line: 195.5 }), game(100, 96)), "won");
+  assert.equal(settleLeg(L({ market: "totals", side: "under", line: 196 }), game(100, 96)), "push");
+  assert.equal(settleLeg(L({ market: "h2h", side: "home", regulation: true }), game(3, 2)), null);
+  assert.equal(settleLeg(L({ market: "h2h", side: "home" }), { ...game(1, 0), completed: false }), null);
+});
+
+test("şirket satırından ayak: deplasman handikabı ev sahibi çizgisine çevrilir", () => {
+  const leg = legFromBet({ event_id: "e", commence_time: "", home_team: "Home", away_team: "Away", market: "spreads", market_label: "Handikap", selection: "Away", point: 4.5, label: "Away +4.5", price: 1.9, bookmaker_title: "X", fair_probability: 0.55 }, "nba");
+  assert.equal(leg.side, "away");
+  assert.equal(leg.line, -4.5);
+  assert.equal(settleLeg(leg, game(100, 97)), "won");
+});
+
+test("kupon sonucu ve istatistik", () => {
+  const bet = { stake: 10, ev: 0.1, legs: [L({ odds: 2, status: "won", close_prob: 0.55 }), L({ odds: 1.5, status: "push", close_prob: 0.7 })] };
+  assert.deepEqual(betOutcome(bet), { status: "won", profit: 10 });
+  assert.equal(betOutcome({ stake: 10, legs: [L({ status: "lost" }), L({ status: "pending" })] }).status, "lost");
+  assert.equal(betOutcome({ stake: 10, legs: [L({ status: "won" }), L({ status: "pending" })] }).status, "pending");
+  assert.ok(Math.abs(betClv(bet) - (2 * 0.55 * 1.5 * 0.7 - 1)) < 1e-4);
+  const s = ledgerStats([{ ...bet, status: "won", profit: 10 }, { stake: 10, ev: 0.02, status: "lost", profit: -10, legs: [L({})] }, { stake: 5, ev: 0, status: "pending", legs: [L({})] }]);
+  assert.equal(s.settled, 2); assert.equal(s.pending, 1); assert.equal(s.profit, 0); assert.equal(s.staked, 20);
+  assert.equal(s.win_rate, 0.5); assert.equal(s.clv_count, 1);
+});
+
+test("güncel adil olasılık: şirket ve iddaa ayakları", () => {
+  const bLeg = { source: "book", market: "spreads", side: "home", line: -3.5, odds: 2 };
+  assert.ok(Math.abs(currentFairProb(ev, bLeg, { devigMethod: "multiplicative" }) - 0.5) < 1e-9);
+  const row = evalB(ev, { totals: { line: "224.5", over: "2", under: "2" } }).find((x) => x.side === "over");
+  const iLeg = legFromIddaa(row, ev);
+  assert.equal(iLeg.line, 224.5);
+  assert.equal(currentFairProb(ev, iLeg), row.fair_probability);
+  assert.equal(sportOf({ sport_key: "basketball_euroleague" }).name, "EuroLeague");
+  assert.equal(sportOf({ sport_key: "americanfootball_nfl" }).spreadSd, 13.5);
+});

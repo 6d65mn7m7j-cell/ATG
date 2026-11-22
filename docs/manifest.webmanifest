@@ -1,7 +1,7 @@
 {
-  "name": "NBA & NHL Value — Değerli Bahis Bulucu",
+  "name": "Value Bet — NBA, NHL, EuroLeague, NFL",
   "short_name": "NBA Value",
-  "description": "NBA ve NHL maçları için değerli bahis bulucu",
+  "description": "NBA, NHL, EuroLeague ve NFL için değerli bahis bulucu",
   "lang": "tr",
   "start_url": "./",
   "scope": "./",
