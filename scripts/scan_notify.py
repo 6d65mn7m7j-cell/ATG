@@ -139,7 +139,7 @@ def format_message(found: list[tuple[str, ValueBet]], cfg: dict[str, Any], remai
     total = len(found) + len(iddaa_rows)
     best = max([b.edge for _, b in found] + [x["edge"] for x in iddaa_rows], default=0)
     return {
-        "title": f"{total} değerli bahis{f' (iddaa {len(iddaa_rows)})' if iddaa_rows else ''} · {', '.join(sports)}",
+        "title": f"Oran Radarı · {total} değerli bahis{f' (iddaa {len(iddaa_rows)})' if iddaa_rows else ''} · {', '.join(sports)}",
         "message": "\n".join(lines),
         "tags": ["moneybag"],
         "priority": 4 if best >= 0.05 else 3,

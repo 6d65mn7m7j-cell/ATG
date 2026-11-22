@@ -2,7 +2,7 @@ import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
   evaluateOddspapi, legFromOddspapi, kellyFraction,
-} from "./valuebet.js?v=13";
+} from "./valuebet.js?v=14";
 
 const OP_SPORTS = ["nba", "euroleague", "nfl", "nhl"]; // OddsPapi ile otomatik iddaa karşılaştırılan ligler
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;

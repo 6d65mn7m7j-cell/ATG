@@ -1,4 +1,4 @@
-# Değerli Bahis Bulucu (NBA · NHL · EuroLeague · NFL · UFC/MMA)
+# Oran Radarı — Değerli Bahis Bulucu (NBA · NHL · EuroLeague · NFL · UFC/MMA)
 
 NBA, NHL, EuroLeague, NFL ve UFC/MMA'da bahis şirketlerinin oranlarını karşılaştırıp **pozitif beklenen değerli (+EV)** bahisleri bulan uygulama. Web arayüzü, REST API ve komut satırı aracı içerir.
 

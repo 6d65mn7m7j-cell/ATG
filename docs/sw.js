@@ -1,6 +1,6 @@
 // Uygulama kabuğunu önbelleğe alır; oran API'si önbelleğe alınmaz.
-const CACHE = "nbav-v13";
-const SHELL = ["./", "index.html", "main.js?v=13", "valuebet.js?v=13", "manifest.webmanifest", "sample_odds.json",
+const CACHE = "nbav-v14";
+const SHELL = ["./", "index.html", "main.js?v=14", "valuebet.js?v=14", "manifest.webmanifest", "sample_odds.json",
   "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png", "oddspapi_meta.json"];
 
 self.addEventListener("install", (e) => {
