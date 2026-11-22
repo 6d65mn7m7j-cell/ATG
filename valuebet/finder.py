@@ -19,6 +19,20 @@ from . import odds as om
 MARKET_LABELS = {"h2h": "Maç Sonucu", "spreads": "Handikap", "totals": "Toplam Sayı"}
 DEFAULT_SHARP_BOOKS = ("pinnacle", "betonlineag", "circasports", "lowvig")
 
+# Bahis borsaları net kazançtan komisyon keser; EV bu net orana göre hesaplanır.
+EXCHANGE_COMMISSION = {
+    "betfair_ex_eu": 0.05,
+    "betfair_ex_uk": 0.05,
+    "betfair_ex_au": 0.05,
+    "matchbook": 0.02,
+    "smarkets": 0.02,
+}
+
+
+def net_price(bookmaker: str, price: float) -> float:
+    c = EXCHANGE_COMMISSION.get(bookmaker, 0.0)
+    return 1.0 + (price - 1.0) * (1.0 - c)
+
 
 @dataclass
 class FinderConfig:
@@ -50,6 +64,7 @@ class ValueBet:
     bookmaker: str
     bookmaker_title: str
     price: float
+    net_price: float  # borsa komisyonu düşülmüş oran (diğer şirketlerde = price)
     american: int
     fair_probability: float
     fair_odds: float
@@ -190,10 +205,11 @@ def find_value_bets(events: Iterable[dict[str, Any]], cfg: FinderConfig | None =
                         if not (cfg.min_odds <= price <= cfg.max_odds):
                             continue
                         p = probs[name]
-                        edge = om.expected_value(p, price)
+                        net = net_price(line.key, price)
+                        edge = om.expected_value(p, net)
                         if edge < cfg.min_edge or edge > cfg.max_edge:
                             continue
-                        k = om.kelly_fraction(p, price)
+                        k = om.kelly_fraction(p, net)
                         stake_pct = min(k * cfg.kelly_multiplier, cfg.max_stake_pct)
                         results.append(
                             ValueBet(
@@ -208,6 +224,7 @@ def find_value_bets(events: Iterable[dict[str, Any]], cfg: FinderConfig | None =
                                 bookmaker=line.key,
                                 bookmaker_title=line.title,
                                 price=price,
+                                net_price=round(net, 3),
                                 american=om.decimal_to_american(price),
                                 fair_probability=round(p, 4),
                                 fair_odds=round(om.fair_odds(p), 3),

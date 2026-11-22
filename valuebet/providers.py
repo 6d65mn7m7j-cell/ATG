@@ -58,14 +58,19 @@ class TheOddsAPIProvider:
             return cached[1]
 
         params = {
-            "apiKey": self.api_key,
             "regions": regions,
             "markets": ",".join(markets),
             "oddsFormat": "decimal",
             "dateFormat": "iso",
         }
         try:
-            resp = httpx.get(f"{self.BASE_URL}/sports/{SPORT_KEY}/odds", params=params, timeout=self.timeout)
+            resp = httpx.get(
+                f"{self.BASE_URL}/sports/{SPORT_KEY}/odds",
+                params=params,
+                # Anahtar URL yerine başlıkta gönderilir: loglara/geçmişe düşmez.
+                headers={"x-api-key": self.api_key},
+                timeout=self.timeout,
+            )
         except httpx.HTTPError as exc:
             raise ProviderError(f"Oran servisine ulaşılamadı: {exc}") from exc
 

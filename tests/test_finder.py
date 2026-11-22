@@ -84,3 +84,10 @@ def test_api_demo():
     assert all(b["edge"] >= 0.03 and b["market"] in ("h2h", "totals") for b in j["bets"])
     assert c.get("/api/value-bets", params={"demo": True, "devig": "nope"}).status_code == 400
     assert c.get("/").status_code == 200
+
+
+def test_exchange_commission_reduces_edge():
+    ev = event(book("pinnacle", h2h=(1.95, 1.95)), book("betfair_ex_eu", h2h=(2.10, 1.75)))
+    b = find_value_bets([ev], FinderConfig(min_edge=0.0, devig_method="multiplicative"))[0]
+    assert b.net_price == pytest.approx(1 + 1.10 * 0.95)
+    assert b.edge == pytest.approx(0.5 * b.net_price - 1, abs=1e-4)

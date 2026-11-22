@@ -42,6 +42,8 @@ python -m valuebet --reference consensus --devig shin --json
 ## Notlar
 
 - Ücretsiz API planı ayda 500 istek verir; her tarama (3 market × 2 bölge) 6 istek harcar. Yanıtlar 120 sn önbelleğe alınır (`CACHE_SECONDS`).
+- Anahtar URL'de değil `x-api-key` başlığında gönderilir.
+- Betfair/Matchbook gibi borsalarda EV, komisyon (%5 / %2) düşülmüş net orana göre hesaplanır.
 - Pinnacle oranları `eu` bölgesindedir; bu yüzden varsayılan bölge `us,eu`'dur.
 - Demo verisi `scripts/generate_sample.py` ile üretilir.
 - Testler: `python -m pytest`

@@ -224,7 +224,7 @@ function render() {
       <td><div class="match">${esc(b.away_team)} @ ${esc(b.home_team)}</div></td>
       <td><div>${esc(b.label)}</div><div class="sub">${esc(b.market_label)}</div></td>
       <td>${esc(b.bookmaker_title)}${b.best_price ? '<span class="pill best">en iyi oran</span>' : ''}</td>
-      <td class="num"><b>${b.price.toFixed(2)}</b><div class="sub">${b.american > 0 ? '+' : ''}${b.american}</div></td>
+      <td class="num"><b>${b.price.toFixed(2)}</b><div class="sub">${b.net_price < b.price ? 'net ' + b.net_price.toFixed(2) : (b.american > 0 ? '+' : '') + b.american}</div></td>
       <td class="num">${b.fair_odds.toFixed(2)}<div class="sub">${b.reference === 'sharp' ? esc(b.reference_books[0]) : `<span class="pill cons">konsensüs · ${b.reference_books.length}</span>`}</div></td>
       <td class="num">${pct(b.fair_probability)}<div class="sub">ima: ${pct(b.implied_probability)}</div></td>
       <td class="num edge">+${pct(b.edge)}</td>
