@@ -5,7 +5,12 @@ on:
     # Her gün 15:07 UTC = 18:07 Türkiye. Önümüzdeki 14 saati tarar (EuroLeague akşam maçları,
     # NFL pazar maçları, NBA/NHL gece maçları). Kotayı korumak için tek çalıştırma.
     - cron: "7 15 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Yalnızca deneme bildirimi gönder (oran isteği yapılmaz)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,7 +39,7 @@ jobs:
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: python scripts/scan_notify.py
+        run: python scripts/scan_notify.py ${{ inputs.test && '--test-notify' || '' }}
       - name: Bildirilenleri kaydet
         if: always() && hashFiles('.notify_state.json') != ''
         uses: actions/cache/save@v4

@@ -150,3 +150,19 @@ def test_mma_labels_and_markets():
     ev = event(book("pinnacle", h2h=(1.95, 1.95)), book("soft", h2h=(2.10, 1.75)))
     ev["sport_key"] = "mma_mixed_martial_arts"
     assert find_value_bets([ev], FinderConfig(min_edge=0.01))[0].market_label == "Kazanan"
+
+
+def test_scan_notify_test_flag_requires_topic(monkeypatch):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("scan_notify2", Path(__file__).parent.parent / "scripts" / "scan_notify.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    monkeypatch.delenv("NTFY_TOPIC", raising=False)
+    assert mod.main(["--test-notify"]) == 1
+    sent = {}
+    monkeypatch.setenv("NTFY_TOPIC", "t")
+    monkeypatch.setattr(mod, "send_ntfy", lambda payload, topic, server: sent.update(payload=payload, topic=topic))
+    assert mod.main(["--test-notify"]) == 0
+    assert sent["topic"] == "t" and "Deneme" in sent["payload"]["title"]

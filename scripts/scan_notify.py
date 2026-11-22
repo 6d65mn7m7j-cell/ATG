@@ -135,7 +135,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--state", default=str(ROOT / ".notify_state.json"), help="Bildirilen bahislerin listesi")
     ap.add_argument("--demo", action="store_true", help="API yerine örnek NBA verisi")
     ap.add_argument("--dry-run", action="store_true", help="Bildirim göndermeden mesajı yazdır")
+    ap.add_argument("--test-notify", action="store_true", help="API'ye istek atmadan yalnızca deneme bildirimi gönder")
     args = ap.parse_args(argv)
+
+    if args.test_notify:
+        topic = os.environ.get("NTFY_TOPIC", "").strip()
+        if not topic:
+            print("NTFY_TOPIC tanımlı değil; deneme bildirimi gönderilemedi.")
+            return 1
+        cfg = load_config(Path(args.config))
+        send_ntfy(
+            {"title": "Deneme bildirimi ✅", "message": "Bağlantı çalışıyor. Değerli bahis bulunduğunda bildirimler buraya gelecek.",
+             "tags": ["white_check_mark"], "priority": 3, "click": cfg["app_url"]},
+            topic, os.environ.get("NTFY_SERVER", "https://ntfy.sh"),
+        )
+        print("Deneme bildirimi gönderildi.")
+        return 0
 
     cfg = load_config(Path(args.config))
     state_path = Path(args.state)
