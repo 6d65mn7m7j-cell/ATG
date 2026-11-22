@@ -16,8 +16,8 @@ from .providers import ProviderError, get_provider
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="NBA, NHL, EuroLeague ve NFL için değerli bahis bulucu")
-    ap.add_argument("--sport", choices=("nba", "nhl", "euroleague", "nfl"), default="nba")
+    ap = argparse.ArgumentParser(description="NBA, NHL, EuroLeague, NFL ve UFC/MMA için değerli bahis bulucu")
+    ap.add_argument("--sport", choices=("nba", "nhl", "euroleague", "nfl", "ufc"), default="nba")
     ap.add_argument("--demo", action="store_true", help="API yerine örnek veriyi kullan")
     ap.add_argument("--min-edge", type=float, default=0.02, help="En düşük EV (0.02 = %%2)")
     ap.add_argument("--devig", choices=om.DEVIG_METHODS, default="power")

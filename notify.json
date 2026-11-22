@@ -1,5 +1,5 @@
 {
-  "sports": ["nba", "nhl", "euroleague", "nfl"],
+  "sports": ["nba", "nhl", "euroleague", "nfl", "ufc"],
   "regions": "eu",
   "hours_ahead": 14,
   "min_edge": 0.03,

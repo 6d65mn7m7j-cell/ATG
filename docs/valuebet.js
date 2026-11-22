@@ -250,7 +250,7 @@ export function evaluateIddaa(event, entry, options = {}) {
     if (odds == null || p == null) return;
     res.push({
       event_id: event.id, match: `${H} – ${A}`, commence_time: event.commence_time, market,
-      market_label: MARKET_LABELS[market], side, line: market === "h2h" ? null : parseLine(e[market]?.line), label, odds, fair_probability: r(p), fair_odds: r(1 / p, 3),
+      market_label: sportOf(event).labels?.[market] || MARKET_LABELS[market], side, line: market === "h2h" ? null : parseLine(e[market]?.line), label, odds, fair_probability: r(p), fair_odds: r(1 / p, 3),
       edge: r(p * odds - 1), reference: ref.kind, reference_books: ref.books, reference_line: ref.line, adjusted,
       mbs: Number(entry.mbs) || 1,
     });
@@ -354,6 +354,11 @@ export const SPORTS = {
     id: "nfl", key: "americanfootball_nfl", name: "NFL", spreadSd: 13.5, totalSd: 13.5, model: "normal", iddaaRule: "ot",
     reg: { sd: 13.5, tieRate: 0.055, totalSd: 13, otPoints: 5 },
     labels: { h2h: "Maç Sonucu (uzt. dahil)", spreads: "Handikap", totals: "Toplam Sayı" },
+  },
+  // MMA: yalnızca kazanan (2 yönlü) marketi; beraberlik çok nadir (~%0,5) ve hesaba katılmaz.
+  ufc: {
+    id: "ufc", key: "mma_mixed_martial_arts", name: "UFC/MMA", model: "normal", iddaaRule: "ot",
+    markets: ["h2h"], labels: { h2h: "Kazanan" },
   },
   nhl: {
     id: "nhl", key: "icehockey_nhl", name: "NHL", model: "hockey", iddaaRule: "regulation",

@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { findValueBets } from "../../docs/valuebet.js";
 import assert from "node:assert/strict";
 import { evaluateIddaa, buildCoupons, parseOdds, parseLine, normCdf, normInv } from "../../docs/valuebet.js";
 
@@ -227,4 +228,21 @@ test("normal süre: toplam, uzatma payı kadar düşük; 1-X-2 ve alt/üst satı
   assert.ok(evaluateIddaaAny(nhl, { h2h: { home: "2,5", draw: "4", away: "2,5" } }, { regulationBySport: { nhl: false } }).every((r) => r.model));
   // kayıt: normal süre ayağı elle sonuçlanır
   assert.equal(legFromIddaa(over, ev).regulation, true);
+});
+
+test("UFC/MMA: kazanan marketi, iki yönlü iddaa, etiket", () => {
+  const fight = {
+    id: "f1", sport_key: "mma_mixed_martial_arts", commence_time: "2026-12-05T20:15:00Z", home_team: "Fighter A", away_team: "Fighter B",
+    bookmakers: [
+      { key: "pinnacle", title: "Pinnacle", markets: [{ key: "h2h", outcomes: [{ name: "Fighter A", price: 1.6 }, { name: "Fighter B", price: 2.5 }] }] },
+      { key: "soft", title: "Soft", markets: [{ key: "h2h", outcomes: [{ name: "Fighter A", price: 1.5 }, { name: "Fighter B", price: 2.85 }] }] },
+    ],
+  };
+  assert.equal(sportOf(fight).name, "UFC/MMA");
+  const rows = evaluateIddaaAny(fight, { h2h: { home: "1,55", away: "2,70" } });
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => !r.regulation && r.market_label === "Kazanan"));
+  assert.ok(Math.abs(rows[0].fair_probability + rows[1].fair_probability - 1) < 1e-3);
+  const bets = findValueBets([fight], { minEdge: 0.01, labels: SP.ufc.labels });
+  assert.ok(bets.some((b) => b.bookmaker === "soft" && b.selection === "Fighter B" && b.market_label === "Kazanan"));
 });

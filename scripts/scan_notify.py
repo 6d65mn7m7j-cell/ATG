@@ -30,12 +30,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from valuebet.finder import FinderConfig, ValueBet, find_value_bets  # noqa: E402
-from valuebet.providers import SPORTS, SampleProvider  # noqa: E402
+from valuebet.providers import SPORT_MARKETS, SPORTS, SampleProvider  # noqa: E402
 
 API = "https://api.the-odds-api.com/v4"
-SPORT_NAMES = {"nba": "NBA", "nhl": "NHL", "euroleague": "EuroLeague", "nfl": "NFL"}
+SPORT_NAMES = {"nba": "NBA", "nhl": "NHL", "euroleague": "EuroLeague", "nfl": "NFL", "ufc": "UFC/MMA"}
 DEFAULT_CONFIG: dict[str, Any] = {
-    "sports": ["nba", "nhl", "euroleague", "nfl"],
+    "sports": ["nba", "nhl", "euroleague", "nfl", "ufc"],
     "regions": "eu",
     "hours_ahead": 14,
     "min_edge": 0.03,
@@ -90,7 +90,7 @@ class OddsClient:
         return self._get(
             f"/sports/{SPORTS[sport]}/odds",
             {
-                "regions": regions, "markets": "h2h,spreads,totals", "oddsFormat": "decimal",
+                "regions": regions, "markets": ",".join(SPORT_MARKETS.get(sport, ("h2h", "spreads", "totals"))), "oddsFormat": "decimal",
                 "dateFormat": "iso", "commenceTimeFrom": iso(start), "commenceTimeTo": iso(end),
             },
         )

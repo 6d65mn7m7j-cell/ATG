@@ -21,6 +21,7 @@ HOCKEY_MARKET_LABELS = {"h2h": "Maç Sonucu (uzt. dahil)", "spreads": "Handikap 
 
 
 NFL_MARKET_LABELS = {"h2h": "Maç Sonucu (uzt. dahil)", "spreads": "Handikap", "totals": "Toplam Sayı"}
+MMA_MARKET_LABELS = {"h2h": "Kazanan"}
 
 
 def market_label(event: dict[str, Any], market: str) -> str:
@@ -29,6 +30,8 @@ def market_label(event: dict[str, Any], market: str) -> str:
         labels = HOCKEY_MARKET_LABELS
     elif key.startswith("americanfootball"):
         labels = NFL_MARKET_LABELS
+    elif key.startswith("mma"):
+        labels = MMA_MARKET_LABELS
     else:
         labels = MARKET_LABELS
     return labels.get(market, market)

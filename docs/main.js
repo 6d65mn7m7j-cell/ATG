@@ -1,9 +1,11 @@
 import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
-} from "./valuebet.js?v=9";
+} from "./valuebet.js?v=10";
 
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
+const ALL_MARKETS = ["h2h", "spreads", "totals"];
+const marketsOf = (sport) => SPORTS[sport].markets || ALL_MARKETS;
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (x) => (x * 100).toFixed(1) + "%";
@@ -70,7 +72,7 @@ async function refresh() {
     if (settings.demo) {
       events = await (await fetch("sample_odds.json", { cache: "no-store" })).json();
     } else {
-      const url = `${API(sport)}?regions=${encodeURIComponent(settings.regions)}&markets=h2h,spreads,totals&oddsFormat=decimal&dateFormat=iso`;
+      const url = `${API(sport)}?regions=${encodeURIComponent(settings.regions)}&markets=${marketsOf(sport).join(",")}&oddsFormat=decimal&dateFormat=iso`;
       const r = await fetch(url, { headers: { "x-api-key": settings.apiKey.trim() } });
       if (r.status === 401) throw new Error("API anahtarı geçersiz.");
       if (r.status === 429) throw new Error("İstek limitine ulaşıldı.");
@@ -121,7 +123,8 @@ function engineOptions() {
 
 function compute() {
   if (!snapshot) return null;
-  const markets = settings.market === "all" ? ["h2h", "spreads", "totals"] : [settings.market];
+  const avail = marketsOf(settings.sport);
+  const markets = settings.market === "all" || !avail.includes(settings.market) ? avail : [settings.market];
   const bets = findValueBets(snapshot.events, {
     minEdge: (Number(settings.minEdge) || 0) / 100,
     reference: settings.reference,
@@ -150,8 +153,10 @@ function render() {
   $("#sportName").textContent = SPORTS[settings.sport].name;
   $("#sports").innerHTML = Object.values(SPORTS).map((x) => `<button class="chip ${x.id === settings.sport ? "on" : ""}" data-sport="${x.id}">${x.name}</button>`).join("");
 
-  const chips = [["all", "Tümü"], ["h2h", "Maç Sonucu"], ["spreads", "Handikap"], ["totals", "Toplam"]];
+  const avail = marketsOf(settings.sport);
+  const chips = avail.length > 1 ? [["all", "Tümü"], ["h2h", "Maç Sonucu"], ["spreads", "Handikap"], ["totals", "Toplam"]] : [];
   $("#mchips").innerHTML = chips.map(([k, t]) => `<button class="chip ${settings.market === k ? "on" : ""}" data-m="${k}">${t}</button>`).join("");
+  $("#mchips").hidden = !chips.length;
 
   const s = res?.summary;
   $("#stats").innerHTML = [
@@ -170,7 +175,7 @@ function render() {
   if (!res) {
     list.innerHTML = settings.demo && settings.sport !== "nba"
       ? `<div class="empty"><b>Demo verisi yalnızca NBA için</b>${SPORTS[settings.sport].name} oranları için Ayarlar'dan API anahtarınızı girin.</div>`
-      : `<div class="empty"><b>Oranları taramak için yenileyin</b>Sağ üstteki düğmeye dokunun. Her tarama 6 API isteği harcar.<button class="btn" data-refresh>Şimdi tara</button></div>`;
+      : `<div class="empty"><b>Oranları taramak için yenileyin</b>Sağ üstteki düğmeye dokunun. Her tarama ${marketsOf(settings.sport).length * settings.regions.split(",").length} API isteği harcar.<button class="btn" data-refresh>Şimdi tara</button></div>`;
     return;
   }
   list.innerHTML = res.bets.length
@@ -237,7 +242,9 @@ function renderGames() {
   $("#regToggle").hidden = !!rule;
   $("#iddaaReg").checked = reg;
   $("#regSport").textContent = SPORTS[settings.sport].name;
-  $("#iddaaIntro").textContent = hockeySport
+  $("#iddaaIntro").textContent = marketsOf(settings.sport).length === 1
+    ? "iddaa'da gördüğünüz dövüş kazananı oranlarını girin; Pinnacle'ın (yoksa piyasa ortalamasının) marjsız oranıyla karşılaştırılır. Beraberlik çok nadir olduğu için hesaba katılmaz. Ondalık için virgül kullanabilirsiniz."
+    : hockeySport
     ? "iddaa'da buz hokeyi bahisleri normal süre (60 dk) sonucuna göredir: MS ve handikap 1-X-2, alt/üst normal süre golleri. Adil oranlar Pinnacle'ın uzatmalar dahil oranlarından Poisson gol modeliyle türetilir. Handikapta ev sahibinin gol handikabını girin (ör. -1 ya da -1,5). Ondalık için virgül kullanabilirsiniz."
     : reg
       ? `Uzatmalar sayılmaz: MS 1-X-2 (X = normal sürede beraberlik), handikap ve alt/üst normal süre skoruna göre. Adil oranlar Pinnacle'ın uzatmalar dahil oranlarından normal süre modeliyle türetilir (${SPORTS[settings.sport].name}'de maçların ~%${Math.round(SPORTS[settings.sport].reg.tieRate * 100)}'ı uzatmaya gider). Handikapta ev sahibinin çizgisini girin; tam sayı çizgide X de girilebilir. Ondalık için virgül kullanabilirsiniz.`
@@ -263,7 +270,9 @@ function renderGames() {
   box.innerHTML = games.map((g) => {
     const H = short(g.home_team), A = short(g.away_team), id = g.id;
     const mbs = iddaa[id]?.mbs ?? "1";
-    const rows = reg ? `
+    const onlyH2h = marketsOf(settings.sport).length === 1;
+    const rows = onlyH2h ? `
+      <div class="mk"><span>Kazanan</span><i></i>${inp(id, "h2h.home", "1 · " + H)}${inp(id, "h2h.away", "2 · " + A)}</div>` : reg ? `
       <div class="mk mk5"><span>MS</span><i></i>${inp(id, "h2h.home", "1")}${inp(id, "h2h.draw", "X")}${inp(id, "h2h.away", "2")}</div>
       <div class="mk mk5"><span>Handikap</span>${inp(id, "spreads.line", H + " hnd", "text")}${inp(id, "spreads.home", "1")}${inp(id, "spreads.draw", "X")}${inp(id, "spreads.away", "2")}</div>
       <div class="mk mk5"><span>Alt / Üst</span>${inp(id, "totals.line", "Çizgi")}${inp(id, "totals.under", "Alt")}${inp(id, "totals.over", "Üst")}<i></i></div>` : `

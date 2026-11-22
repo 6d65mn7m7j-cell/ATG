@@ -20,7 +20,10 @@ SPORTS = {
     "nhl": "icehockey_nhl",
     "euroleague": "basketball_euroleague",
     "nfl": "americanfootball_nfl",
+    "ufc": "mma_mixed_martial_arts",
 }
+# Ligin desteklediği marketler (MMA'da yalnızca kazanan); fazlası istek israfı.
+SPORT_MARKETS = {"ufc": ("h2h",)}
 SPORT_KEY = SPORTS["nba"]
 
 
@@ -62,6 +65,7 @@ class TheOddsAPIProvider:
     def fetch(self, markets: tuple[str, ...] = ("h2h", "spreads", "totals"), regions: str = "us,eu", sport: str = "nba") -> list[dict[str, Any]]:
         if sport not in SPORTS:
             raise ProviderError(f"Bilinmeyen spor: {sport}. Seçenekler: {', '.join(SPORTS)}")
+        markets = tuple(m for m in markets if m in SPORT_MARKETS.get(sport, markets)) or SPORT_MARKETS.get(sport, ("h2h",))
         key = (sport, tuple(sorted(markets)), regions)
         cached = self._cache.get(key)
         if cached and time.time() - cached[0] < self.cache_seconds:

@@ -141,3 +141,12 @@ def test_scan_notify_dry_run(tmp_path, capsys):
     capsys.readouterr()
     mod.main(["--demo", "--dry-run", "--state", str(state)])
     assert ", 0 yeni" in capsys.readouterr().out
+
+
+def test_mma_labels_and_markets():
+    from valuebet.providers import SPORT_MARKETS, SPORTS
+
+    assert SPORTS["ufc"] == "mma_mixed_martial_arts" and SPORT_MARKETS["ufc"] == ("h2h",)
+    ev = event(book("pinnacle", h2h=(1.95, 1.95)), book("soft", h2h=(2.10, 1.75)))
+    ev["sport_key"] = "mma_mixed_martial_arts"
+    assert find_value_bets([ev], FinderConfig(min_edge=0.01))[0].market_label == "Kazanan"

@@ -60,7 +60,7 @@ def value_bets(
     max_odds: float = Query(6.0, ge=1.01),
     regions: str = Query("us,eu"),
     demo: bool = Query(False),
-    sport: str = Query("nba", pattern="^(nba|nhl|euroleague|nfl)$"),
+    sport: str = Query("nba", pattern="^(nba|nhl|euroleague|nfl|ufc)$"),
 ) -> dict:
     if devig not in om.DEVIG_METHODS:
         raise HTTPException(400, f"devig şunlardan biri olmalı: {', '.join(om.DEVIG_METHODS)}")

@@ -1,6 +1,6 @@
-# Değerli Bahis Bulucu (NBA · NHL · EuroLeague · NFL)
+# Değerli Bahis Bulucu (NBA · NHL · EuroLeague · NFL · UFC/MMA)
 
-NBA, NHL, EuroLeague ve NFL maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif beklenen değerli (+EV)** bahisleri bulan uygulama. Web arayüzü, REST API ve komut satırı aracı içerir.
+NBA, NHL, EuroLeague, NFL ve UFC/MMA'da bahis şirketlerinin oranlarını karşılaştırıp **pozitif beklenen değerli (+EV)** bahisleri bulan uygulama. Web arayüzü, REST API ve komut satırı aracı içerir.
 
 ## Nasıl çalışır?
 
@@ -20,6 +20,7 @@ NBA, NHL, EuroLeague ve NFL maçlarında bahis şirketlerinin oranlarını karş
 - Ayarlar değiştirildiğinde yeniden API isteği yapılmaz; son çekilen oranlar üzerinden yeniden hesaplanır (kota dostu).
 - **iddaa sekmesi:** iddaa'da gördüğünüz oranları (maç sonucu, handikap, alt/üst) ve maçın MBS değerini elle girersiniz. Oranlar Pinnacle'ın marjsız oranıyla karşılaştırılır; iddaa çizgisi farklıysa adil olasılık normal dağılım modeliyle (fark σ≈12.5, toplam σ≈18.5) düzeltilir. MBS kuralına uyan ve her maçtan tek seçim içeren pozitif EV'li kuponlar, beklenen log büyümesine göre sıralanarak önerilir. Girişler yalnızca cihazda saklanır.
 - **Uzatmalar (iddaa):** iddaa'da NBA ve NFL'de uzatmalar sayılır, NHL'de sayılmaz (kullanıcı tarafından doğrulandı; `SPORTS[..].iddaaRule`). Bu kurallar sabittir. Kuralı doğrulanmamış EuroLeague varsayılan olarak uzatmalar dahil değerlendirilir; iddaa sekmesindeki "Uzatmalar sayılmaz" anahtarıyla normal süre modeline (MS 1-X-2, normal süre handikap ve alt/üst) geçilebilir. Normal süre modeli Pinnacle'ın uzatmalar dahil oranlarına uydurulur: fark ayrık normal dağılım, beraberlik olasılığı lige özgü uzatma oranına kalibre, uzatma yazı-tura; toplamdan uzatmanın ortalama katkısı düşülür. Normal süre bahisleri kayıtta elle sonuçlandırılır.
+- **UFC/MMA:** The Odds API'nin `mma_mixed_martial_arts` akışı (UFC dışındaki organizasyonları da içerir; organizasyon adı verilmez). Yalnızca kazanan (2 yönlü) marketi vardır, bu yüzden tarama bölge başına 1 istek harcar. Beraberlik çok nadir olduğundan hesaba katılmaz. Etkinlikten haftalar önce az şirket fiyat verir; adil oranlar etkinlik yaklaştıkça güvenilir hale gelir.
 - **NHL:** Üstteki NBA/NHL düğmesiyle spor değiştirilir; her spor için son tarama ayrı saklanır. iddaa'da buz hokeyi normal süreye (60 dk) göre oynandığı için NHL kartında MS ve handikap 1-X-2, alt/üst normal süre golleri olarak girilir. Adil olasılıklar, Pinnacle'ın uzatmalar dahil maç sonucu ve toplam gol oranlarına uydurulan bir Poisson gol modelinden türetilir (normal sürede beraberlik NHL gerçeğine göre ~%21-23'e kalibre edilir, uzatma/penaltı yazı-tura ve toplam gole +1 sayılır). NBA ve NHL girişleri aynı kuponda birleştirilebilir.
 - Yerelde deneme: `python -m http.server -d docs 8080`
 
