@@ -2,7 +2,7 @@ import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
   evaluateOddspapi, legFromOddspapi, kellyFraction,
-} from "./valuebet.js?v=11";
+} from "./valuebet.js?v=12";
 
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
 const ALL_MARKETS = ["h2h", "spreads", "totals"];
@@ -31,7 +31,7 @@ const settings = {
   minEdge: DEFAULTS.minEdge * 100, reference: DEFAULTS.reference, devigMethod: DEFAULTS.devigMethod,
   minOdds: DEFAULTS.minOdds, maxOdds: DEFAULTS.maxOdds, bankroll: DEFAULTS.bankroll,
   kellyMultiplier: String(DEFAULTS.kellyMultiplier), maxStakePct: DEFAULTS.maxStakePct * 100,
-  books: [], market: "all", sport: "nba", oddspapiKey: "", iddaaMbs: "1",
+  books: [], market: "all", sport: "nba", oddspapiKey: "", iddaaMbs: "1", onlyIddaa: true,
   ...store.get("settings", {}),
 };
 // Kuralı doğrulanmamış ligler için iddaa uzatma tercihi (true = uzatmalar sayılmaz).
@@ -345,6 +345,7 @@ async function fetchAuto() {
   const key = (settings.oddspapiKey || "").trim();
   if (!key) { autoError = "OddsPapi anahtarı yok. Ayarlar'dan girin."; renderAuto(); return; }
   autoLoading = true; autoError = ""; renderAuto();
+  $("#refresh").classList.add("spin");
   try {
     const meta = await loadOpMeta();
     const ids = Object.keys(meta.tournaments).join(",");
@@ -378,6 +379,7 @@ async function fetchAuto() {
     autoError = e.message === "Failed to fetch" ? "Bağlantı kurulamadı." : e.message;
   } finally {
     autoLoading = false;
+    $("#refresh").classList.remove("spin");
     renderAuto(); updateIddaa();
   }
 }
@@ -693,7 +695,18 @@ document.addEventListener("click", (e) => {
   else if ("refresh" in t.dataset) refresh();
   else t.classList.toggle("open");
 });
-$("#refresh").addEventListener("click", refresh);
+// Yalnızca iddaa modunda üstteki yenile düğmesi iddaa oranlarını (OddsPapi) getirir.
+$("#refresh").addEventListener("click", () => (settings.onlyIddaa ? (show("v-iddaa"), fetchAuto()) : refresh()));
+
+function applyMode() {
+  const only = !!settings.onlyIddaa;
+  document.querySelector('nav button[data-view="v-bets"]').hidden = only;
+  $("#booksGroup").hidden = only;
+  $("#manualRefresh").hidden = !only;
+  if (only && $("#v-bets").classList.contains("on")) show("v-iddaa");
+}
+$("#onlyIddaa").checked = !!settings.onlyIddaa;
+$("#onlyIddaa").addEventListener("change", (e) => { settings.onlyIddaa = e.target.checked; saveSettings(); applyMode(); });
 
 // iPhone'da Safari'den açılmışsa ana ekrana ekleme ipucu göster
 const standalone = window.navigator.standalone || matchMedia("(display-mode: standalone)").matches;
@@ -706,5 +719,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js", { up
 
 bindSettings();
 render();
-// Anahtar yoksa ve hiç veri yoksa ilk açılışta demo ile başlat
-if (!snapshot && !settings.apiKey) { settings.demo = true; $("#demo").checked = true; saveSettings(); refresh(); }
+applyMode();
+if (settings.onlyIddaa) show("v-iddaa");
+// Yalnızca iddaa modunda demo verisine gerek yok; diğer modda anahtar ve veri yoksa demo ile başlat
+else if (!snapshot && !settings.apiKey) { settings.demo = true; $("#demo").checked = true; saveSettings(); refresh(); }

@@ -216,6 +216,7 @@
       <div id="autoList"></div>
     </div>
     <h2 class="sec">Elle giriş</h2>
+    <p class="intro" id="manualRefresh" hidden>OddsPapi'de olmayan maçlar (ör. UFC) için. Maç listesi ve Pinnacle referansı The Odds API'den gelir: <button class="linkbtn" data-refresh>maçları yenile (3 istek)</button></p>
     <div class="group" id="regToggle">
       <div class="field">
         <label for="iddaaReg">Uzatmalar sayılmaz · <span id="regSport">NBA</span><small>Bu ligin iddaa kuralı doğrulanmadı. Kapalı: uzatmalar dahil. NBA ve NFL'de uzatmalar sayılır, NHL'de sayılmaz.</small></label>
@@ -294,6 +295,14 @@
     </div>
 
     <div class="group">
+      <h3>Görünüm</h3>
+      <div class="field">
+        <label for="onlyIddaa">Yalnızca iddaa<small>Bahisler sekmesini (yabancı şirketler) gizler; uygulama iddaa sekmesinde açılır</small></label>
+        <input id="onlyIddaa" class="switch" type="checkbox" checked>
+      </div>
+    </div>
+
+    <div class="group">
       <h3>iddaa otomatik (OddsPapi)</h3>
       <div class="field col">
         <label for="oddspapiKey">OddsPapi anahtarı<small>Yalnızca bu cihazda saklanır. oddspapi.io'dan ücretsiz alınır (ayda 250 istek; her getirme 2 istek).</small></label>
@@ -330,6 +339,6 @@
 </nav>
 
 <div id="toast" role="status" aria-live="polite"></div>
-<script type="module" src="main.js?v=11"></script>
+<script type="module" src="main.js?v=12"></script>
 </body>
 </html>

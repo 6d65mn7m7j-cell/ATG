@@ -52,6 +52,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "daily_budget": 10,
     "iddaa_hours": [19, 1],
     "oddspapi_monthly_budget": 130,
+    "book_alerts": True,  # False: yalnızca iddaa (The Odds API ile yabancı şirket taraması yapılmaz)
     "notify_when_empty": False,
     "app_url": "https://6d65mn7m7j-cell.github.io/ATG/",
 }
@@ -225,12 +226,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.demo:
         found = [("nba", b) for b in find_value_bets(SampleProvider().fetch(), finder)]
+    elif not cfg["book_alerts"]:
+        print("Şirket taraması kapalı (book_alerts: false); yalnızca iddaa.")
+    elif not os.environ.get("ODDS_API_KEY", "").strip():
+        print("ODDS_API_KEY tanımlı değil; şirket taraması atlandı.")
     else:
-        key = os.environ.get("ODDS_API_KEY", "").strip()
-        if not key:
-            print("ODDS_API_KEY tanımlı değil; tarama atlandı.")
-            return 0
-        client = OddsClient(key)
+        client = OddsClient(os.environ["ODDS_API_KEY"].strip())
         # Maçı olan ligleri ücretsiz /events ile bul; en yakın maçı olan lig önce taranır.
         queue = []
         for sport in cfg["sports"]:

@@ -29,7 +29,8 @@ NBA, NHL, EuroLeague, NFL ve UFC/MMA'da bahis şirketlerinin oranlarını karş�
 [OddsPapi](https://oddspapi.io) iddaa'nın kendi oranlarını da sağlar. OddsPapi'de market kimlikleri tüm şirketlerde aynıdır (aynı market tipi, süre ve çizgi), bu yüzden iddaa'nın her ana marketi Pinnacle'ın aynı kimlikli marketiyle doğrudan karşılaştırılır; çizgi düzeltmesi ya da model gerekmez. `result` = uzatmalar dahil, `fulltime` = normal süre (NHL'de iddaa MS 1-X-2 normal süredir ve Pinnacle'ın da aynı marketi vardır).
 
 - Uygulama: Ayarlar → OddsPapi anahtarı (yalnızca cihazda). iddaa sekmesi → "iddaa oranlarını getir": NBA, EuroLeague, NHL ve NFL için iddaa + Pinnacle = **2 istek**. Değerli oranlar listelenir, kayda eklenir; kupon önerileri bu oranları da kullanır (MBS varsayılanı Ayarlar'da). %25'in üzerindeki farklar "şüpheli" işaretlenir.
-- Bildirim: `ODDSPAPI_KEY` repo gizli değeri varsa 19:07 ve 01:07 taramalarında iddaa da taranır (`iddaa_hours`), aylık bütçe `oddspapi_monthly_budget` (130).
+- Bildirim: `ODDSPAPI_KEY` repo gizli değeri varsa `iddaa_hours` saatlerinde (varsayılan 13:07, 19:07, 01:07) iddaa taranır; aylık sınır `oddspapi_monthly_budget` (186 ≈ günde 3 × 2 istek).
+- **Yalnızca iddaa modu** (varsayılan): uygulama iddaa sekmesinde açılır, Bahisler sekmesi (yabancı şirketler) gizlenir, üstteki yenile düğmesi iddaa oranlarını getirir. Bildirimlerde `book_alerts: false` ile The Odds API şirket taraması yapılmaz. The Odds API yalnızca kayıttaki otomatik sonuçlandırma, UFC ve elle giriş için kullanılır. Ayarlar → Görünüm'den kapatılabilir.
 - Meta veri (market tanımları, takım adları) `docs/oddspapi_meta.json`'dadır; Actions → "OddsPapi meta verisi" ile yenilenir. Motor: `docs/valuebet.js` `evaluateOddspapi` ve `valuebet/oddspapi.py` (gerçek örnek veriyle birebir aynı sonuç testleri).
 - Ücretsiz plan: ayda 250 istek, sıfırlanma her ayın 1'i 00:00 UTC.
 

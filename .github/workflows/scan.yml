@@ -2,8 +2,8 @@ name: Değerli bahis taraması
 
 on:
   schedule:
-    # Günde 3 tarama (Türkiye saati 13:07, 19:07, 01:07); her biri önümüzdeki 8 saati kapsar.
-    # Kotayı notify.json'daki daily_budget sınırlar (varsayılan günde 10 istek ≈ ayda 300).
+    # Günde 3 tarama (Türkiye saati 13:07, 19:07, 01:07). iddaa (OddsPapi) her taramada 2 istek;
+    # aylık sınır notify.json'da oddspapi_monthly_budget. Şirket taraması (The Odds API) book_alerts ile açılır.
     - cron: "7 10 * * *"
     - cron: "7 16 * * *"
     - cron: "7 22 * * *"

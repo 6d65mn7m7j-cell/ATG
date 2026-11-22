@@ -18,10 +18,12 @@
   "min_remaining_quota": 100,
   "daily_budget": 10,
   "iddaa_hours": [
+    13,
     19,
     1
   ],
-  "oddspapi_monthly_budget": 130,
+  "oddspapi_monthly_budget": 186,
   "notify_when_empty": false,
-  "app_url": "https://6d65mn7m7j-cell.github.io/ATG/"
+  "app_url": "https://6d65mn7m7j-cell.github.io/ATG/",
+  "book_alerts": false
 }

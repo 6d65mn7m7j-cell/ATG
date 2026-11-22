@@ -217,3 +217,25 @@ def test_scan_notify_daily_budget(tmp_path, monkeypatch, capsys):
     mod.main(["--config", str(cfg), "--state", str(state)])  # aynı gün ikinci çalıştırma
     assert calls == []
     assert "günlük bütçe doldu" in capsys.readouterr().out
+
+
+def test_scan_notify_book_alerts_off_skips_odds_api(tmp_path, monkeypatch, capsys):
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("scan_notify4", Path(__file__).parent.parent / "scripts" / "scan_notify.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    class Boom:
+        def __init__(self, key):
+            raise AssertionError("The Odds API çağrılmamalı")
+
+    monkeypatch.setattr(mod, "OddsClient", Boom)
+    monkeypatch.setenv("ODDS_API_KEY", "x")
+    monkeypatch.delenv("ODDSPAPI_KEY", raising=False)
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps({"book_alerts": False}))
+    assert mod.main(["--config", str(cfg), "--state", str(tmp_path / "s.json")]) == 0
+    assert "yalnızca iddaa" in capsys.readouterr().out
