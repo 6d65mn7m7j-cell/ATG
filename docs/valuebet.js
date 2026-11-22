@@ -340,10 +340,19 @@ export function buildCoupons(selections, options = {}) {
 // spreadSd / totalSd: iddaa çizgisi referanstan farklıysa kullanılan normal dağılım sapmaları (yaklaşık).
 const BASKET = { h2h: "Maç Sonucu", spreads: "Handikap", totals: "Toplam Sayı" };
 export const SPORTS = {
-  nba: { id: "nba", key: "basketball_nba", name: "NBA", labels: BASKET, spreadSd: 12.5, totalSd: 18.5, model: "normal" },
-  euroleague: { id: "euroleague", key: "basketball_euroleague", name: "EuroLeague", labels: BASKET, spreadSd: 11.5, totalSd: 15.5, model: "normal" },
+  // reg: normal süre modeli. sd: normal süre fark sapması, tieRate: uzatmaya gitme oranı (μ=0 iken),
+  // totalSd: normal süre toplam sapması, otPoints: uzatmada eklenen ortalama toplam sayı.
+  nba: {
+    id: "nba", key: "basketball_nba", name: "NBA", labels: BASKET, spreadSd: 12.5, totalSd: 18.5, model: "normal",
+    reg: { sd: 12, tieRate: 0.06, totalSd: 17.5, otPoints: 21 },
+  },
+  euroleague: {
+    id: "euroleague", key: "basketball_euroleague", name: "EuroLeague", labels: BASKET, spreadSd: 11.5, totalSd: 15.5, model: "normal",
+    reg: { sd: 11, tieRate: 0.05, totalSd: 15, otPoints: 19 },
+  },
   nfl: {
     id: "nfl", key: "americanfootball_nfl", name: "NFL", spreadSd: 13.5, totalSd: 13.5, model: "normal",
+    reg: { sd: 13.5, tieRate: 0.055, totalSd: 13, otPoints: 5 },
     labels: { h2h: "Maç Sonucu (uzt. dahil)", spreads: "Handikap", totals: "Toplam Sayı" },
   },
   nhl: {
@@ -450,9 +459,109 @@ export function evaluateIddaaHockey(event, entry, options = {}) {
   return res;
 }
 
-/** Spora göre doğru iddaa değerlendiricisini seçer. */
+// ================================================================ normal süre modeli (basketbol, NFL)
+// iddaa uzatmaları saymıyorsa: normal süre farkı ayrık normal dağılım; fark=0 (uzatmaya gitme) olasılığı
+// lige özgü gerçek orana göre şişirilir. Uzatmada kazanan yazı-tura. Model Pinnacle'ın uzatmalar dahil
+// maç sonucu (ve varsa toplam) oranlarına uydurulur.
+const GRID = 80;
+function marginPmf(mu, sd, kappa) {
+  const pmf = [];
+  for (let k = -GRID; k <= GRID; k++) pmf.push(normCdf((k + 0.5 - mu) / sd) - normCdf((k - 0.5 - mu) / sd));
+  pmf[GRID] *= kappa;
+  const s = pmf.reduce((a, b) => a + b, 0);
+  return pmf.map((v) => v / s);
+}
+const tieKappa = (reg) => {
+  const p0 = normCdf(0.5 / reg.sd) - normCdf(-0.5 / reg.sd);
+  return (reg.tieRate * (1 - p0)) / (p0 * (1 - reg.tieRate));
+};
+const pmfSum = (pmf, f) => pmf.reduce((s, v, i) => s + (f(i - GRID) ? v : 0), 0);
+
+/** Normal süre modeli: { pmf (ev sahibi farkı), total (normal süre toplamı: {mu, sd}) , ... } */
+export function regulationModel(event, options = {}) {
+  const sp = sportOf(event);
+  if (!sp.reg) return null;
+  const cfg = { ...DEFAULTS, ...options };
+  const ml = pickReference(referenceLines(event, "h2h", cfg), null);
+  if (!ml) return null;
+  const kappa = tieKappa(sp.reg);
+  const pFull = ml.probs[event.home_team];
+  const homeFull = (mu) => { const pmf = marginPmf(mu, sp.reg.sd, kappa); return pmfSum(pmf, (k) => k > 0) + 0.5 * pmf[GRID]; };
+  const mu = bisect((m) => homeFull(m) - pFull, -45, 45, 1e-9, 80);
+  const pmf = marginPmf(mu, sp.reg.sd, kappa);
+  const pTie = pmf[GRID];
+
+  let total = null;
+  const tots = referenceLines(event, "totals", cfg);
+  if (tots.length) {
+    const pool = tots.some((r) => r.kind === "sharp") ? tots.filter((r) => r.kind === "sharp") : tots;
+    const main = pool.reduce((b, r) => (Math.abs(r.probs.Over - 0.5) < Math.abs(b.probs.Over - 0.5) ? r : b));
+    const sd = sp.reg.totalSd, ot = sp.reg.otPoints, L0 = main.line;
+    // Uzatmalar dahil üst = normal sürede üst + (berabere ve normal süre toplamı L0-ot ile L0 arasında)
+    const fullOver = (tau) => (1 - normCdf((L0 - tau) / sd)) + pTie * (normCdf((L0 - tau) / sd) - normCdf((L0 - ot - tau) / sd));
+    const tau = bisect((t) => fullOver(t) - main.probs.Over, L0 - 80, L0 + 80, 1e-9, 80);
+    total = { mu: tau, sd, refLine: L0 };
+  }
+  return { mu, pmf, pTie, total, reference: ml.kind, books: [...new Set([...ml.books, ...(tots[0]?.books || [])])] };
+}
+
+// Normal süre toplamının ayrık olasılıkları
+const totalProb = (t, f) => {
+  let s = 0;
+  const lo = Math.floor(t.mu - 8 * t.sd), hi = Math.ceil(t.mu + 8 * t.sd);
+  for (let k = lo; k <= hi; k++) if (f(k)) s += normCdf((k + 0.5 - t.mu) / t.sd) - normCdf((k - 0.5 - t.mu) / t.sd);
+  return s;
+};
+
+/** iddaa normal süre değerlendirmesi (basketbol/NFL). entry hokey ile aynı biçimde: MS 1-X-2, handikapta tam sayı çizgide X. */
+export function evaluateIddaaRegulation(event, entry, options = {}) {
+  const model = regulationModel(event, options);
+  if (!model) return [];
+  const { pmf } = model, H = event.home_team, A = event.away_team, e = entry || {};
+  const h = e.spreads ? parseLine(e.spreads.line) : null;
+  const L = e.totals ? parseLine(e.totals.line) : null;
+  const res = [];
+  const push = (market, side, label, odds, win, pushP = 0) => {
+    if (odds == null || !(win > 0)) return;
+    const p = win + pushP / odds;
+    res.push({
+      event_id: event.id, match: `${H} – ${A}`, commence_time: event.commence_time, market,
+      market_label: { h2h: "Maç Sonucu (normal süre)", spreads: "Handikap (normal süre)", totals: "Alt/Üst (normal süre)" }[market],
+      side, line: market === "h2h" ? null : market === "spreads" ? h : L, label, odds, fair_probability: r(p),
+      fair_odds: r((1 - pushP) / win, 3), edge: r(p * odds - 1), reference: model.reference, reference_books: model.books,
+      reference_line: null, adjusted: true, model: true, regulation: true, mbs: Number(e.mbs) || 1,
+    });
+  };
+  if (e.h2h) {
+    push("h2h", "home", `1 · ${H}`, parseOdds(e.h2h.home), pmfSum(pmf, (k) => k > 0));
+    push("h2h", "draw", "X · Beraberlik", parseOdds(e.h2h.draw), model.pTie);
+    push("h2h", "away", `2 · ${A}`, parseOdds(e.h2h.away), pmfSum(pmf, (k) => k < 0));
+  }
+  if (h != null) {
+    const f = (x) => (x > 0 ? "+" : "") + x;
+    const pushP = Number.isInteger(h) && parseOdds(e.spreads.draw) == null ? pmfSum(pmf, (k) => k + h === 0) : 0;
+    push("spreads", "home", `${H} (${f(h)})`, parseOdds(e.spreads.home), pmfSum(pmf, (k) => k + h > 0), pushP);
+    if (Number.isInteger(h)) push("spreads", "draw", `X (${f(h)})`, parseOdds(e.spreads.draw), pmfSum(pmf, (k) => k + h === 0));
+    push("spreads", "away", `${A} (${f(-h)})`, parseOdds(e.spreads.away), pmfSum(pmf, (k) => k + h < 0), pushP);
+  }
+  if (L != null && model.total) {
+    const pushP = totalProb(model.total, (k) => k === L);
+    push("totals", "over", `Üst ${L}`, parseOdds(e.totals.over), totalProb(model.total, (k) => k > L), pushP);
+    push("totals", "under", `Alt ${L}`, parseOdds(e.totals.under), totalProb(model.total, (k) => k < L), pushP);
+  }
+  return res;
+}
+
+/**
+ * Spora ve kurala göre doğru iddaa değerlendiricisini seçer.
+ * options.regulation = true (varsayılan): uzatmalar sayılmaz (normal süre). false: uzatmalar dahil (basketbol/NFL).
+ * Hokey her zaman normal süredir.
+ */
 export function evaluateIddaaAny(event, entry, options = {}) {
-  return sportOf(event).model === "hockey" ? evaluateIddaaHockey(event, entry, options) : evaluateIddaa(event, entry, options);
+  const sp = sportOf(event);
+  if (sp.model === "hockey") return evaluateIddaaHockey(event, entry, options);
+  if (options.regulation !== false) return evaluateIddaaRegulation(event, entry, options);
+  return evaluateIddaa(event, entry, options);
 }
 
 // ================================================================ bahis kaydı
@@ -477,7 +586,7 @@ export function legFromIddaa(x, event) {
   return {
     sport: sp.id, event_id: x.event_id, commence_time: x.commence_time, home: event.home_team, away: event.away_team,
     market: x.market, market_label: x.market_label, side: x.side, line: x.line ?? null, label: x.label, odds: x.odds,
-    source: "iddaa", bookmaker: "iddaa", regulation: sp.model === "hockey", fair_prob: x.fair_probability, close_prob: null,
+    source: "iddaa", bookmaker: "iddaa", regulation: sp.model === "hockey" || !!x.regulation, fair_prob: x.fair_probability, close_prob: null,
     status: "pending",
   };
 }
@@ -486,7 +595,7 @@ export function legFromIddaa(x, event) {
 export function currentFairProb(event, leg, options = {}) {
   if (leg.source === "iddaa") {
     const slot = { line: leg.line == null ? "" : String(leg.line), [leg.side]: String(leg.odds) };
-    const rows = evaluateIddaaAny(event, { [leg.market]: slot }, options);
+    const rows = evaluateIddaaAny(event, { [leg.market]: slot }, { ...options, regulation: !!leg.regulation });
     return rows.find((r) => r.market === leg.market && r.side === leg.side)?.fair_probability ?? null;
   }
   const lineId = leg.market === "h2h" ? null : leg.line;

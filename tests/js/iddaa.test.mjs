@@ -171,3 +171,50 @@ test("güncel adil olasılık: şirket ve iddaa ayakları", () => {
   assert.equal(sportOf({ sport_key: "basketball_euroleague" }).name, "EuroLeague");
   assert.equal(sportOf({ sport_key: "americanfootball_nfl" }).spreadSd, 13.5);
 });
+
+import { regulationModel, evaluateIddaaRegulation, SPORTS as SP } from "../../docs/valuebet.js";
+
+const bball = (sport_key, ml, tot) => ({
+  id: "r1", sport_key, commence_time: "2026-11-23T00:30:00Z", home_team: "Home", away_team: "Away",
+  bookmakers: [{ key: "pinnacle", title: "Pinnacle", markets: [
+    { key: "h2h", outcomes: [{ name: "Home", price: ml[0] }, { name: "Away", price: ml[1] }] },
+    { key: "totals", outcomes: [{ name: "Over", price: 1.95, point: tot }, { name: "Under", price: 1.95, point: tot }] },
+  ] }],
+});
+
+test("normal süre: eşit maçta 1 = 2, X ≈ uzatma oranı, uzatmalar dahil olasılığı korunur", () => {
+  for (const [key, id] of [["basketball_nba", "nba"], ["basketball_euroleague", "euroleague"], ["americanfootball_nfl", "nfl"]]) {
+    const m = regulationModel(bball(key, [1.95, 1.95], 220.5), { devigMethod: "multiplicative" });
+    const sum = (f) => m.pmf.reduce((s, v, i) => s + (f(i - 80) ? v : 0), 0);
+    assert.ok(Math.abs(sum(() => true) - 1) < 1e-9);
+    assert.ok(Math.abs(sum((k) => k > 0) - sum((k) => k < 0)) < 1e-6, id);
+    assert.ok(Math.abs(m.pTie - SP[id].reg.tieRate) < 1e-3, `${id} X ${m.pTie}`);
+  }
+  const fav = regulationModel(bball("basketball_nba", [1.4, 3.2], 225.5), { devigMethod: "multiplicative" });
+  const s = (f) => fav.pmf.reduce((a, v, i) => a + (f(i - 80) ? v : 0), 0);
+  const pFull = (1 / 1.4) / (1 / 1.4 + 1 / 3.2);
+  assert.ok(Math.abs(s((k) => k > 0) + fav.pTie / 2 - pFull) < 1e-6);
+  assert.ok(fav.pTie < 0.06); // favori varken beraberlik daha az olası
+});
+
+test("normal süre: toplam, uzatma payı kadar düşük; 1-X-2 ve alt/üst satırları", () => {
+  const ev = bball("basketball_nba", [1.95, 1.95], 220.5);
+  const m = regulationModel(ev, { devigMethod: "multiplicative" });
+  assert.ok(m.total.mu < 220.5 && m.total.mu > 218, String(m.total.mu));
+  const rows = evaluateIddaaRegulation(ev, {
+    h2h: { home: "1,95", draw: "15", away: "1,95" }, spreads: { line: "-2", home: "2,1", draw: "14", away: "1,8" },
+    totals: { line: "220,5", over: "1,9", under: "1,9" }, mbs: 1,
+  }, { devigMethod: "multiplicative" });
+  const ms = rows.filter((r) => r.market === "h2h");
+  assert.deepEqual(ms.map((r) => r.side), ["home", "draw", "away"]);
+  assert.ok(Math.abs(ms.reduce((a, r) => a + r.fair_probability, 0) - 1) < 1e-3);
+  assert.ok(rows.every((r) => r.regulation && r.model));
+  assert.equal(rows.filter((r) => r.market === "spreads").length, 3);
+  const over = rows.find((r) => r.side === "over"), under = rows.find((r) => r.side === "under");
+  assert.ok(over.fair_probability < 0.5 && under.fair_probability > 0.5); // uzatma sayılmayınca üst zorlaşır
+  // varsayılan yönlendirme normal süre; regulation:false uzatmalar dahil (2 yönlü)
+  assert.ok(evaluateIddaaAny(ev, { h2h: { home: "2", away: "2" } }).every((r) => r.regulation));
+  assert.ok(evaluateIddaaAny(ev, { h2h: { home: "2", away: "2" } }, { regulation: false }).every((r) => !r.regulation));
+  // kayıt: normal süre ayağı elle sonuçlanır
+  assert.equal(legFromIddaa(over, ev).regulation, true);
+});
