@@ -18,6 +18,7 @@ NBA maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif 
 - Yayınlama: GitHub → Settings → Pages → *Deploy from a branch* → dal ve `/docs` klasörü.
 - iPhone'a ekleme: Safari'de sayfayı açın → **Paylaş** → **Ana Ekrana Ekle**.
 - Ayarlar değiştirildiğinde yeniden API isteği yapılmaz; son çekilen oranlar üzerinden yeniden hesaplanır (kota dostu).
+- **iddaa sekmesi:** iddaa'da gördüğünüz oranları (maç sonucu, handikap, alt/üst) ve maçın MBS değerini elle girersiniz. Oranlar Pinnacle'ın marjsız oranıyla karşılaştırılır; iddaa çizgisi farklıysa adil olasılık normal dağılım modeliyle (fark σ≈12.5, toplam σ≈18.5) düzeltilir. MBS kuralına uyan ve her maçtan tek seçim içeren pozitif EV'li kuponlar, beklenen log büyümesine göre sıralanarak önerilir. Girişler yalnızca cihazda saklanır.
 - Yerelde deneme: `python -m http.server -d docs 8080`
 
 ## Kurulum

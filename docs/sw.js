@@ -1,5 +1,5 @@
 // Uygulama kabuğunu önbelleğe alır; oran API'si önbelleğe alınmaz.
-const CACHE = "nbav-v1";
+const CACHE = "nbav-v2";
 const SHELL = ["./", "index.html", "main.js", "valuebet.js", "manifest.webmanifest", "sample_odds.json",
   "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 

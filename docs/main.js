@@ -1,4 +1,4 @@
-import { findValueBets, summarize, listBookmakers, DEFAULTS } from "./valuebet.js";
+import { findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaa, buildCoupons } from "./valuebet.js";
 
 const API = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds";
 const $ = (s) => document.querySelector(s);
@@ -29,6 +29,7 @@ const settings = {
   ...store.get("settings", {}),
 };
 let snapshot = store.get("snapshot", null); // { events, fetchedAt, source, quota }
+let iddaa = store.get("iddaa", {}); // { eventId: { h2h:{home,away}, spreads:{line,home,away}, totals:{line,over,under}, mbs } }
 let error = "";
 let loading = false;
 
@@ -66,10 +67,22 @@ async function refresh() {
     loading = false;
     $("#refresh").classList.remove("spin");
     render();
+    if ($("#v-iddaa").classList.contains("on")) renderGames();
   }
 }
 
 // ------------------------------------------------------------ çizim
+function engineOptions() {
+  return {
+    minEdge: (Number(settings.minEdge) || 0) / 100,
+    reference: settings.reference,
+    devigMethod: settings.devigMethod,
+    bankroll: Number(settings.bankroll) || 0,
+    kellyMultiplier: Number(settings.kellyMultiplier),
+    maxStakePct: (Number(settings.maxStakePct) || 0) / 100,
+  };
+}
+
 function compute() {
   if (!snapshot) return null;
   const markets = settings.market === "all" ? ["h2h", "spreads", "totals"] : [settings.market];
@@ -165,6 +178,115 @@ function renderBooks() {
   }
 }
 
+// ------------------------------------------------------------ iddaa
+const short = (team) => team.split(" ").slice(-1)[0];
+const upcoming = () => (snapshot?.events || [])
+  .filter((e) => Date.parse(e.commence_time) > Date.now() - 5 * 60000)
+  .sort((a, b) => a.commence_time.localeCompare(b.commence_time));
+const get = (o, path) => path.split(".").reduce((x, k) => x?.[k], o);
+
+function renderGames() {
+  const box = $("#games");
+  if (!snapshot) {
+    box.innerHTML = `<div class="empty"><b>Önce oranları tarayın</b>Karşılaştırma için Pinnacle oranları gerekir.<button class="btn" data-refresh>Şimdi tara</button></div>`;
+    renderCoupons([]);
+    return;
+  }
+  const games = upcoming();
+  if (!games.length) {
+    box.innerHTML = `<div class="empty"><b>Başlamamış maç yok</b>Yeni maçları görmek için oranları yenileyin.</div>`;
+    renderCoupons([]);
+    return;
+  }
+  // artık listede olmayan maçların girişlerini temizle
+  const ids = new Set(snapshot.events.map((e) => e.id));
+  for (const k of Object.keys(iddaa)) if (!ids.has(k)) delete iddaa[k];
+  store.set("iddaa", iddaa);
+
+  const inp = (id, path, ph, mode = "decimal") =>
+    `<input data-ev="${esc(id)}" data-path="${path}" inputmode="${mode}" placeholder="${esc(ph)}" value="${esc(get(iddaa[id], path) ?? "")}" autocomplete="off">`;
+  box.innerHTML = games.map((g) => {
+    const H = short(g.home_team), A = short(g.away_team), id = g.id;
+    const mbs = iddaa[id]?.mbs ?? "1";
+    return `
+    <article class="card game" data-game="${esc(id)}">
+      <div class="top"><span>${esc(when(g.commence_time))}</span><button class="linkbtn" data-clear="${esc(id)}">Temizle</button></div>
+      <h4>${esc(g.home_team)} – ${esc(g.away_team)}</h4>
+      <div class="mk"><span>Maç Sonucu</span><input class="blank" tabindex="-1" aria-hidden="true">${inp(id, "h2h.home", "1 · " + H)}${inp(id, "h2h.away", "2 · " + A)}</div>
+      <div class="mk"><span>Handikap</span>${inp(id, "spreads.line", H + " hnd", "text")}${inp(id, "spreads.home", H)}${inp(id, "spreads.away", A)}</div>
+      <div class="mk"><span>Alt / Üst</span>${inp(id, "totals.line", "Çizgi")}${inp(id, "totals.under", "Alt")}${inp(id, "totals.over", "Üst")}</div>
+      <div class="mbs"><span>MBS (en az kaç maçlı kupon)</span>
+        <select data-ev="${esc(id)}" data-path="mbs">${[1, 2, 3, 4].map((n) => `<option ${String(mbs) === String(n) ? "selected" : ""}>${n}</option>`).join("")}</select>
+      </div>
+      <div class="evals" id="evals-${esc(id)}"></div>
+    </article>`;
+  }).join("");
+  updateIddaa();
+}
+
+function updateIddaa() {
+  if (!snapshot) return;
+  const opts = engineOptions();
+  const all = [];
+  for (const g of upcoming()) {
+    const el = document.getElementById("evals-" + g.id);
+    if (!el) continue;
+    const entry = iddaa[g.id];
+    if (!entry) { el.innerHTML = ""; continue; }
+    const rows = evaluateIddaa(g, entry, opts);
+    all.push(...rows);
+    const typed = ["h2h.home", "h2h.away", "spreads.home", "spreads.away", "totals.over", "totals.under"].some((p) => get(entry, p));
+    if (!rows.length) {
+      el.innerHTML = typed ? `<div class="ev-row"><div class="nm">Bu market için referans oran bulunamadı ya da çizgi eksik.</div></div>` : "";
+      continue;
+    }
+    el.innerHTML = rows.map((x) => {
+      const val = x.edge >= opts.minEdge;
+      const note = x.adjusted ? `çizgi düzeltildi · ref. ${x.market === "spreads" ? (x.reference_line > 0 ? "+" : "") : ""}${x.reference_line}` : (x.reference === "sharp" ? x.reference_books[0] : "konsensüs");
+      return `<div class="ev-row ${val ? "value" : ""}">
+        <div class="nm">${esc(x.label)}<small>${esc(x.market_label)} · ${esc(note)}</small></div>
+        <div class="od"><b>${x.odds.toFixed(2)}</b><br><small>adil ${x.fair_odds.toFixed(2)}</small></div>
+        <div class="tag ${x.edge > 0 ? "pos" : "neg"}">${x.edge > 0 ? "+" : ""}${pct(x.edge)}</div>
+      </div>`;
+    }).join("");
+  }
+  renderCoupons(all);
+}
+
+function renderCoupons(selections) {
+  const box = $("#coupons");
+  if (!selections.length) {
+    box.innerHTML = `<p class="intro">Oran girdikçe MBS kuralına uygun, pozitif beklenen değerli kuponlar burada listelenir.</p>`;
+    return;
+  }
+  const coupons = buildCoupons(selections, engineOptions());
+  if (!coupons.length) {
+    box.innerHTML = `<p class="intro">Girilen oranlarla MBS kuralına uyan ve eşiği (%${esc(settings.minEdge)}) geçen kupon yok. iddaa marjı yüksek olduğundan bu sık görülür.</p>`;
+    return;
+  }
+  box.innerHTML = coupons.map((c, i) => `
+    <article class="card coupon">
+      <div class="top"><span>${i === 0 ? "En iyi öneri" : `Seçenek ${i + 1}`}</span><span>${c.legs.length === 1 ? "Tekli" : c.legs.length + "'li kupon"}</span></div>
+      <div class="legs">${c.legs.map((l) => `<div><span>${esc(l.label)}<br><small>${esc(l.match)} · ${esc(l.market_label)} · MBS ${l.mbs}</small></span><b>${l.odds.toFixed(2)}</b></div>`).join("")}</div>
+      <div class="sum">
+        <div>Toplam oran<b>${c.odds.toFixed(2)}</b></div>
+        <div>Kazanma ihtimali<b>${pct(c.probability)}</b></div>
+        <div>EV<b style="color:var(--good)">+${pct(c.edge)}</b></div>
+        <div>Stake<b>${money(c.stake)}</b></div>
+      </div>
+    </article>`).join("") + `<p class="intro">Kupon olasılığı maçların bağımsız olduğu varsayımıyla hesaplanır. Bahisten önce oranların değişmediğini iddaa'da kontrol edin.</p>`;
+}
+
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (!t.dataset?.ev) return;
+  const id = t.dataset.ev, [a, b] = t.dataset.path.split(".");
+  iddaa[id] ||= {};
+  if (b) { iddaa[id][a] ||= {}; iddaa[id][a][b] = t.value; } else iddaa[id][a] = t.value;
+  store.set("iddaa", iddaa);
+  updateIddaa();
+});
+
 // ------------------------------------------------------------ olaylar
 function bindSettings() {
   for (const k of ["apiKey", "regions", "minEdge", "reference", "devigMethod", "minOdds", "maxOdds", "bankroll", "kellyMultiplier", "maxStakePct"]) {
@@ -173,6 +295,7 @@ function bindSettings() {
     el.addEventListener("change", () => {
       settings[k] = el.value;
       saveSettings();
+      if ($("#v-iddaa").classList.contains("on")) updateIddaa();
       if (k === "apiKey" && el.value) { settings.demo = false; $("#demo").checked = false; saveSettings(); }
       render();
     });
@@ -186,13 +309,15 @@ function show(view) {
   document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === view));
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
   if (view === "v-settings") renderBooks();
+  if (view === "v-iddaa") renderGames();
   window.scrollTo(0, 0);
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-m],[data-view],[data-go],[data-refresh],.card");
-  if (!t) return;
-  if (t.dataset.m) { settings.market = t.dataset.m; saveSettings(); render(); }
+  const t = e.target.closest("[data-m],[data-view],[data-go],[data-refresh],[data-clear],.card");
+  if (!t || t.classList.contains("game") || t.classList.contains("coupon")) return;
+  if (t.dataset.clear) { delete iddaa[t.dataset.clear]; store.set("iddaa", iddaa); renderGames(); }
+  else if (t.dataset.m) { settings.market = t.dataset.m; saveSettings(); render(); }
   else if (t.dataset.view) show(t.dataset.view);
   else if (t.dataset.go) show(t.dataset.go);
   else if ("refresh" in t.dataset) refresh();

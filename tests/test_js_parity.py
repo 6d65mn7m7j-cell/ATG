@@ -23,3 +23,9 @@ def test_js_matches_python(reference, method):
     out = subprocess.check_output(["node", str(RUNNER), str(SAMPLE_PATH), reference, method, "-0.02"])
     js = json.loads(out)
     assert sorted(tuple(x) for x in js) == sorted((b.bookmaker, b.label, b.price, b.edge, b.stake) for b in py)
+
+
+def test_js_iddaa_unit_tests():
+    tests = Path(__file__).parent / "js" / "iddaa.test.mjs"
+    proc = subprocess.run(["node", "--test", str(tests)], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stdout + proc.stderr

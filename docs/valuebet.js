@@ -175,3 +175,149 @@ export function listBookmakers(events) {
   for (const e of events) for (const b of e.bookmakers || []) m.set(b.key, b.title || b.key);
   return [...m].map(([key, title]) => ({ key, title })).sort((a, b) => a.title.localeCompare(b.title));
 }
+
+// ================================================================ iddaa (elle giriş)
+// NBA sonuç dağılımı için yaklaşık standart sapmalar (uzatmalar dahil).
+export const SPREAD_SD = 12.5;
+export const TOTAL_SD = 18.5;
+
+function erf(x) {
+  // Abramowitz & Stegun 7.1.26 (hata < 1.5e-7)
+  const s = Math.sign(x); x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
+}
+export const normCdf = (x) => 0.5 * (1 + erf(x / Math.SQRT2));
+export function normInv(p) {
+  let lo = -10, hi = 10;
+  for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (normCdf(m) < p) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+
+/** Ondalık oran girdisini ayrıştırır ("1,85" ve "1.85" kabul edilir). Geçersizse null. */
+export function parseOdds(v) {
+  if (v == null) return null;
+  const n = Number(String(v).trim().replace(",", "."));
+  return Number.isFinite(n) && n > 1 ? n : null;
+}
+export function parseLine(v) {
+  if (v == null || String(v).trim() === "") return null;
+  const n = Number(String(v).trim().replace(",", ".").replace("−", "-"));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Bir maç/market için referans adil olasılıkları her çizgi için döndürür. */
+export function referenceLines(event, market, options = {}) {
+  const cfg = { ...DEFAULTS, ...options };
+  const out = [];
+  for (const [id, lines] of collectLines(event, market)) {
+    const ref = referenceProbs(lines, null, cfg);
+    if (ref) out.push({ line: id === "-" ? null : Number(id), ...ref });
+  }
+  return out;
+}
+
+function pickReference(refs, line) {
+  if (!refs.length) return null;
+  const pool = refs.some((r) => r.kind === "sharp") ? refs.filter((r) => r.kind === "sharp") : refs;
+  if (line == null) return pool[0];
+  return pool.reduce((best, r) => (Math.abs(r.line - line) < Math.abs(best.line - line) ? r : best));
+}
+
+/**
+ * iddaa'ya girilen oranları adil olasılıklarla karşılaştırır.
+ * entry = { h2h: {home, away}, spreads: {line, home, away}, totals: {line, over, under}, mbs }
+ * spreads.line ev sahibinin handikabıdır (ör. -4.5).
+ */
+export function evaluateIddaa(event, entry, options = {}) {
+  const cfg = { ...DEFAULTS, ...options };
+  const H = event.home_team, A = event.away_team;
+  const res = [];
+  const push = (market, side, label, odds, p, ref, adjusted) => {
+    if (odds == null || p == null) return;
+    res.push({
+      event_id: event.id, match: `${H} – ${A}`, commence_time: event.commence_time, market,
+      market_label: MARKET_LABELS[market], side, label, odds, fair_probability: r(p), fair_odds: r(1 / p, 3),
+      edge: r(p * odds - 1), reference: ref.kind, reference_books: ref.books, reference_line: ref.line, adjusted,
+      mbs: Number(entry.mbs) || 1,
+    });
+  };
+
+  const e = entry || {};
+  if (e.h2h) {
+    const ref = pickReference(referenceLines(event, "h2h", cfg), null);
+    if (ref) {
+      push("h2h", "home", H, parseOdds(e.h2h.home), ref.probs[H], ref, false);
+      push("h2h", "away", A, parseOdds(e.h2h.away), ref.probs[A], ref, false);
+    }
+  }
+  if (e.spreads) {
+    const line = parseLine(e.spreads.line);
+    const ref = line == null ? null : pickReference(referenceLines(event, "spreads", cfg), line);
+    if (ref) {
+      // Ev sahibi farkı M ~ N(mu, SD). Ev sahibi h handikabıyla kazanır: M + h > 0.
+      const mu = SPREAD_SD * normInv(ref.probs[H]) - ref.line;
+      const pHome = normCdf((mu + line) / SPREAD_SD);
+      const adj = ref.line !== line;
+      const fmt = (x) => (x > 0 ? "+" : "") + x;
+      push("spreads", "home", `${H} ${fmt(line)}`, parseOdds(e.spreads.home), pHome, ref, adj);
+      push("spreads", "away", `${A} ${fmt(-line)}`, parseOdds(e.spreads.away), 1 - pHome, ref, adj);
+    }
+  }
+  if (e.totals) {
+    const line = parseLine(e.totals.line);
+    const ref = line == null ? null : pickReference(referenceLines(event, "totals", cfg), line);
+    if (ref) {
+      const mu = ref.line + TOTAL_SD * normInv(ref.probs.Over);
+      const pOver = normCdf((mu - line) / TOTAL_SD);
+      const adj = ref.line !== line;
+      push("totals", "over", `Üst ${line}`, parseOdds(e.totals.over), pOver, ref, adj);
+      push("totals", "under", `Alt ${line}`, parseOdds(e.totals.under), 1 - pOver, ref, adj);
+    }
+  }
+  return res;
+}
+
+/**
+ * MBS kuralına uyan kuponları üretir. Her maçtan en fazla bir seçim alınır (aynı maç kombine edilemez).
+ * Kupon geçerli: seçim sayısı >= kupondaki en yüksek MBS. Maçların bağımsız olduğu varsayılır.
+ */
+export function buildCoupons(selections, options = {}) {
+  const cfg = { ...DEFAULTS, maxLegs: 4, limit: 5, ...options };
+  const byEvent = new Map();
+  for (const s of selections) {
+    if (s.edge <= 0) continue;
+    const cur = byEvent.get(s.event_id);
+    if (!cur || s.edge > cur.edge) byEvent.set(s.event_id, s);
+  }
+  const cands = [...byEvent.values()].sort((a, b) => b.edge - a.edge).slice(0, 14);
+  const coupons = [];
+  const walk = (start, legs) => {
+    if (legs.length) {
+      const need = Math.max(...legs.map((l) => l.mbs));
+      if (legs.length >= need) {
+        const P = legs.reduce((x, l) => x * l.fair_probability, 1);
+        const O = legs.reduce((x, l) => x * l.odds, 1);
+        const edge = P * O - 1;
+        if (edge >= cfg.minEdge) {
+          const k = kellyFraction(P, O);
+          coupons.push({
+            legs: [...legs], probability: r(P), odds: r(O, 2), edge: r(edge), kelly: r(k),
+            stake: r(cfg.bankroll * Math.min(k * cfg.kellyMultiplier, cfg.maxStakePct), 2),
+          });
+        }
+      }
+    }
+    if (legs.length === cfg.maxLegs) return;
+    for (let i = start; i < cands.length; i++) { legs.push(cands[i]); walk(i + 1, legs); legs.pop(); }
+  };
+  walk(0, []);
+  // Beklenen log büyümesine göre sırala: yüksek EV ama düşük olasılıklı uzun kuponları cezalandırır.
+  const growth = (c) => {
+    const f = Math.min(c.kelly * cfg.kellyMultiplier, cfg.maxStakePct);
+    return c.probability * Math.log(1 + f * (c.odds - 1)) + (1 - c.probability) * Math.log(1 - f);
+  };
+  coupons.sort((a, b) => growth(b) - growth(a) || b.edge - a.edge);
+  return coupons.slice(0, cfg.limit);
+}
