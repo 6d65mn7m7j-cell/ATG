@@ -1,4 +1,4 @@
-import { findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaa, buildCoupons } from "./valuebet.js";
+import { findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaa, buildCoupons } from "./valuebet.js?v=3";
 
 const API = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds";
 const $ = (s) => document.querySelector(s);
@@ -332,7 +332,7 @@ if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !standalone && !store.get("h
   $("#install").addEventListener("click", () => { $("#install").hidden = true; store.set("hideInstall", true); });
 }
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
 
 bindSettings();
 render();
