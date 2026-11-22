@@ -1,7 +1,8 @@
 import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
-} from "./valuebet.js?v=10";
+  evaluateOddspapi, legFromOddspapi, kellyFraction,
+} from "./valuebet.js?v=11";
 
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
 const ALL_MARKETS = ["h2h", "spreads", "totals"];
@@ -30,7 +31,7 @@ const settings = {
   minEdge: DEFAULTS.minEdge * 100, reference: DEFAULTS.reference, devigMethod: DEFAULTS.devigMethod,
   minOdds: DEFAULTS.minOdds, maxOdds: DEFAULTS.maxOdds, bankroll: DEFAULTS.bankroll,
   kellyMultiplier: String(DEFAULTS.kellyMultiplier), maxStakePct: DEFAULTS.maxStakePct * 100,
-  books: [], market: "all", sport: "nba",
+  books: [], market: "all", sport: "nba", oddspapiKey: "", iddaaMbs: "1",
   ...store.get("settings", {}),
 };
 // Kuralı doğrulanmamış ligler için iddaa uzatma tercihi (true = uzatmalar sayılmaz).
@@ -44,6 +45,11 @@ let snapshot = snapshots[settings.sport] || null;
 const setSnapshot = (sport, snap) => { snapshots[sport] = snap; store.set("snapshot_" + sport, snap); if (sport === settings.sport) snapshot = snap; };
 let ledger = store.get("ledger", []); // kayıtlı bahisler
 const saveLedger = () => store.set("ledger", ledger);
+// OddsPapi otomatik iddaa karşılaştırması: { rows, markets, fixtures, avgMargin, fetchedAt }
+let auto = store.get("iddaa_auto", null);
+let autoLoading = false, autoError = "";
+let opMeta = null;
+const loadOpMeta = async () => (opMeta ||= await (await fetch("oddspapi_meta.json")).json());
 let iddaa = store.get("iddaa", {}); // { eventId: { h2h:{home,away}, spreads:{line,home,away}, totals:{line,over,under}, mbs } }
 let error = "";
 let loading = false;
@@ -235,6 +241,7 @@ const upcoming = () => (snapshot?.events || [])
 const get = (o, path) => path.split(".").reduce((x, k) => x?.[k], o);
 
 function renderGames() {
+  renderAuto();
   const box = $("#games");
   const hockeySport = SPORTS[settings.sport].model === "hockey";
   const rule = SPORTS[settings.sport].iddaaRule;
@@ -296,11 +303,15 @@ function renderGames() {
 function updateIddaa() {
   const opts = engineOptions();
   const all = [];
+  const autoRows = (auto?.rows || []).filter((x) => Date.parse(x.commence_time) > Date.now() && x.edge > 0);
+  const autoMatches = new Set(autoRows.map((x) => x.match));
+  all.push(...autoRows.map((x) => ({ ...x, mbs: Number(settings.iddaaMbs) || 1 })));
+  const pushManual = (rows) => all.push(...rows.filter((x) => !autoMatches.has(x.match)));
   // Kuponlar tüm sporlardaki girişlerden kurulur (iddaa'da NBA ve NHL aynı kupona eklenebilir).
   for (const [sport, sn] of Object.entries(snapshots)) {
     if (sport === settings.sport || !sn) continue;
     for (const g of sn.events) {
-      if (iddaa[g.id] && Date.parse(g.commence_time) > Date.now() - 5 * 60000) all.push(...evaluateIddaaAny(g, iddaa[g.id], opts));
+      if (iddaa[g.id] && Date.parse(g.commence_time) > Date.now() - 5 * 60000) pushManual(evaluateIddaaAny(g, iddaa[g.id], opts));
     }
   }
   for (const g of upcoming()) {
@@ -309,7 +320,7 @@ function updateIddaa() {
     const entry = iddaa[g.id];
     if (!entry) { el.innerHTML = ""; continue; }
     const rows = evaluateIddaaAny(g, entry, opts);
-    all.push(...rows);
+    pushManual(rows);
     const typed = ["h2h.home", "h2h.draw", "h2h.away", "spreads.home", "spreads.draw", "spreads.away", "totals.over", "totals.under"].some((p) => get(entry, p));
     if (!rows.length) {
       el.innerHTML = typed ? `<div class="ev-row"><div class="nm">Bu market için referans oran bulunamadı ya da çizgi eksik.</div></div>` : "";
@@ -326,6 +337,88 @@ function updateIddaa() {
     }).join("");
   }
   renderCoupons(all);
+}
+
+// ------------------------------------------------------------ otomatik iddaa (OddsPapi)
+async function fetchAuto() {
+  if (autoLoading) return;
+  const key = (settings.oddspapiKey || "").trim();
+  if (!key) { autoError = "OddsPapi anahtarı yok. Ayarlar'dan girin."; renderAuto(); return; }
+  autoLoading = true; autoError = ""; renderAuto();
+  try {
+    const meta = await loadOpMeta();
+    const ids = Object.keys(meta.tournaments).join(",");
+    const get = async (bk) => {
+      const r = await fetch(`https://api.oddspapi.io/v4/odds-by-tournaments?tournamentIds=${ids}&bookmaker=${bk}&apiKey=${encodeURIComponent(key)}`);
+      if (r.status === 401) throw new Error("OddsPapi anahtarı geçersiz.");
+      if (r.status === 429) {
+        const code = (await r.json().catch(() => ({})))?.error?.code;
+        throw new Error(code === "REQUEST_LIMIT_EXCEEDED" ? "OddsPapi aylık kotası doldu." : "Çok hızlı istek; birkaç saniye sonra tekrar deneyin.");
+      }
+      if (!r.ok) throw new Error(`OddsPapi hata verdi (${r.status}).`);
+      return r.json();
+    };
+    const idd = await get("iddaa");
+    await new Promise((res) => setTimeout(res, 1100)); // uç nokta hız sınırı
+    const pin = await get("pinnacle");
+    const res = evaluateOddspapi(idd, pin, meta, engineOptions());
+    auto = { ...res, fetchedAt: Date.now() };
+    store.set("iddaa_auto", auto);
+    const m = new Date().toISOString().slice(0, 7), c = store.get("op_count", {});
+    store.set("op_count", { month: m, n: (c.month === m ? c.n : 0) + 2 });
+    // Kayıttaki bekleyen OddsPapi ayakları için son adil olasılık (CLV)
+    const byKey = new Map(res.rows.map((x) => [`${x.event_id}|${x.market_id}|${x.outcome_id}`, x]));
+    let changed = false;
+    for (const b of ledger) for (const l of b.legs) {
+      const x = l.source === "oddspapi" && l.status === "pending" && byKey.get(`${l.event_id}|${l.market_id}|${l.outcome_id}`);
+      if (x && Date.parse(x.commence_time) > Date.now()) { l.close_prob = x.fair_probability; l.close_at = Date.now(); changed = true; }
+    }
+    if (changed) saveLedger();
+  } catch (e) {
+    autoError = e.message === "Failed to fetch" ? "Bağlantı kurulamadı." : e.message;
+  } finally {
+    autoLoading = false;
+    renderAuto(); updateIddaa();
+  }
+}
+
+let shownAuto = [];
+function renderAuto() {
+  const box = $("#autoList");
+  if (!box) return;
+  const c = store.get("op_count", {});
+  const usage = c.month === new Date().toISOString().slice(0, 7) ? ` · bu ay ${c.n} istek` : "";
+  $("#autoBtn").disabled = autoLoading;
+  $("#autoBtn").textContent = autoLoading ? "Getiriliyor…" : "iddaa oranlarını getir";
+  $("#autoMeta").textContent = auto
+    ? `Son: ${ago(auto.fetchedAt)} · ${auto.fixtures} maç · ${auto.markets} market · iddaa ort. marj %${((auto.avgMargin || 0) * 100).toFixed(1)}${usage}`
+    : `iddaa'nın tüm oranlarını Pinnacle ile otomatik karşılaştırır (2 istek)${usage}`;
+  if (autoError) { box.innerHTML = `<p class="intro err">${esc(autoError)}</p>`; return; }
+  if (!auto) { box.innerHTML = ""; return; }
+  const minEdge = (Number(settings.minEdge) || 0) / 100;
+  const rows = auto.rows.filter((x) => x.sport === settings.sport && Date.parse(x.commence_time) > Date.now());
+  const value = rows.filter((x) => x.edge >= minEdge);
+  const shown = value.length ? value : rows.slice(0, 5);
+  shownAuto = shown;
+  const name = SPORTS[settings.sport].name;
+  const head = !rows.length
+    ? `<p class="intro">${name} için iddaa oranı yok (maç yok ya da iddaa henüz bülten açmadı).</p>`
+    : value.length
+      ? `<p class="intro"><b>${value.length}</b> değerli iddaa oranı (${name}, eşik %${esc(settings.minEdge)}).</p>`
+      : `<p class="intro">${name}: ${rows.length} iddaa oranı karşılaştırıldı, eşiği geçen yok. Pinnacle'a en yakın 5 oran:</p>`;
+  box.innerHTML = head + shown.map((x, i) => `
+    <div class="ev-row ${x.edge >= minEdge ? "value" : ""}">
+      <div class="nm">${esc(x.label)}${x.edge > DEFAULTS.maxEdge ? ' <span class="pill cons">şüpheli · iddaa\'da kontrol edin</span>' : ""}<small>${esc(when(x.commence_time))} · ${esc(x.match)}<br>${esc(x.market_label)} · Pinnacle ${x.pinnacle_odds.toFixed(2)}</small></div>
+      <div class="od"><b>${x.odds.toFixed(2)}</b><br><small>adil ${x.fair_odds.toFixed(2)}</small></div>
+      <div class="tag ${x.edge > 0 ? "pos" : "neg"}">${x.edge > 0 ? "+" : ""}${pct(x.edge)}</div>
+      ${x.edge > 0 ? `<button class="mini" data-save-auto="${i}" aria-label="Kayda ekle">+</button>` : ""}
+    </div>`).join("");
+}
+function saveAuto(x) {
+  if (!x) return;
+  const o = engineOptions();
+  const stake = Math.round(o.bankroll * Math.min(kellyFraction(x.fair_probability, x.odds) * o.kellyMultiplier, o.maxStakePct) * 100) / 100;
+  addBet([legFromOddspapi(x)], stake, x.edge, "iddaa");
 }
 
 let shownCoupons = [];
@@ -391,7 +484,10 @@ function saveValueBet(b) {
 }
 function saveCoupon(c) {
   if (!c) return;
-  const legs = c.legs.map((x) => { const ev = findEvent(x.event_id); return ev ? legFromIddaa(x, ev) : null; });
+  const legs = c.legs.map((x) => {
+    if (x.source === "oddspapi") return legFromOddspapi(x);
+    const ev = findEvent(x.event_id); return ev ? legFromIddaa(x, ev) : null;
+  });
   if (legs.some((l) => !l)) { toast("Maç verisi bulunamadı"); return; }
   addBet(legs, c.stake, c.edge, "iddaa");
 }
@@ -495,9 +591,11 @@ async function settleFromScores() {
     for (const sp of sports) {
       const r = await fetch(`https://api.the-odds-api.com/v4/sports/${SPORTS[sp].key}/scores?daysFrom=3&dateFormat=iso`, { headers: { "x-api-key": settings.apiKey.trim() } });
       if (!r.ok) throw new Error(`Skor servisi hata verdi (${r.status})`);
-      const games = new Map((await r.json()).map((g) => [g.id, g]));
+      const list = await r.json();
+      const games = new Map(list.map((g) => [g.id, g]));
+      const byTeams = (l) => list.find((g) => g.home_team === l.home && g.away_team === l.away && Math.abs(Date.parse(g.commence_time) - Date.parse(l.commence_time)) < 12 * 3600e3);
       for (const l of legs.filter((x) => x.sport === sp)) {
-        const res = settleLeg(l, games.get(l.event_id));
+        const res = settleLeg(l, games.get(l.event_id) || (l.source === "oddspapi" ? byTeams(l) : null));
         if (res) { l.status = res; done++; }
       }
     }
@@ -547,7 +645,7 @@ $("#iddaaReg").addEventListener("change", (e) => {
 
 // ------------------------------------------------------------ olaylar
 function bindSettings() {
-  for (const k of ["apiKey", "regions", "minEdge", "reference", "devigMethod", "minOdds", "maxOdds", "bankroll", "kellyMultiplier", "maxStakePct"]) {
+  for (const k of ["oddspapiKey", "iddaaMbs", "apiKey", "regions", "minEdge", "reference", "devigMethod", "minOdds", "maxOdds", "bankroll", "kellyMultiplier", "maxStakePct"]) {
     const el = document.getElementById(k);
     el.value = settings[k];
     el.addEventListener("change", () => {
@@ -573,10 +671,12 @@ function show(view) {
 }
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-sport],[data-m],[data-view],[data-go],[data-refresh],[data-clear],[data-save-bet],[data-save-coupon],[data-log],.card");
+  const t = e.target.closest("#autoBtn,[data-save-auto],[data-sport],[data-m],[data-view],[data-go],[data-refresh],[data-clear],[data-save-bet],[data-save-coupon],[data-log],.card");
   if (!t || t.classList.contains("game") || t.classList.contains("coupon") || t.classList.contains("logcard")) return;
   if (t.dataset.saveBet != null) { saveValueBet(shownBets[Number(t.dataset.saveBet)]); return; }
   if (t.dataset.saveCoupon != null) { saveCoupon(shownCoupons[Number(t.dataset.saveCoupon)]); return; }
+  if (t.dataset.saveAuto != null) { saveAuto(shownAuto[Number(t.dataset.saveAuto)]); return; }
+  if (t.id === "autoBtn") { fetchAuto(); return; }
   if (t.dataset.log) { logAction(t.dataset.log, t.dataset.id); return; }
   if (t.dataset.sport) {
     settings.sport = t.dataset.sport; saveSettings();

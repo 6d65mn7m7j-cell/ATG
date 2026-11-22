@@ -24,6 +24,15 @@ NBA, NHL, EuroLeague, NFL ve UFC/MMA'da bahis şirketlerinin oranlarını karş�
 - **NHL:** Üstteki NBA/NHL düğmesiyle spor değiştirilir; her spor için son tarama ayrı saklanır. iddaa'da buz hokeyi normal süreye (60 dk) göre oynandığı için NHL kartında MS ve handikap 1-X-2, alt/üst normal süre golleri olarak girilir. Adil olasılıklar, Pinnacle'ın uzatmalar dahil maç sonucu ve toplam gol oranlarına uydurulan bir Poisson gol modelinden türetilir (normal sürede beraberlik NHL gerçeğine göre ~%21-23'e kalibre edilir, uzatma/penaltı yazı-tura ve toplam gole +1 sayılır). NBA ve NHL girişleri aynı kuponda birleştirilebilir.
 - Yerelde deneme: `python -m http.server -d docs 8080`
 
+## iddaa otomatik (OddsPapi)
+
+[OddsPapi](https://oddspapi.io) iddaa'nın kendi oranlarını da sağlar. OddsPapi'de market kimlikleri tüm şirketlerde aynıdır (aynı market tipi, süre ve çizgi), bu yüzden iddaa'nın her ana marketi Pinnacle'ın aynı kimlikli marketiyle doğrudan karşılaştırılır; çizgi düzeltmesi ya da model gerekmez. `result` = uzatmalar dahil, `fulltime` = normal süre (NHL'de iddaa MS 1-X-2 normal süredir ve Pinnacle'ın da aynı marketi vardır).
+
+- Uygulama: Ayarlar → OddsPapi anahtarı (yalnızca cihazda). iddaa sekmesi → "iddaa oranlarını getir": NBA, EuroLeague, NHL ve NFL için iddaa + Pinnacle = **2 istek**. Değerli oranlar listelenir, kayda eklenir; kupon önerileri bu oranları da kullanır (MBS varsayılanı Ayarlar'da). %25'in üzerindeki farklar "şüpheli" işaretlenir.
+- Bildirim: `ODDSPAPI_KEY` repo gizli değeri varsa 19:07 ve 01:07 taramalarında iddaa da taranır (`iddaa_hours`), aylık bütçe `oddspapi_monthly_budget` (130).
+- Meta veri (market tanımları, takım adları) `docs/oddspapi_meta.json`'dadır; Actions → "OddsPapi meta verisi" ile yenilenir. Motor: `docs/valuebet.js` `evaluateOddspapi` ve `valuebet/oddspapi.py` (gerçek örnek veriyle birebir aynı sonuç testleri).
+- Ücretsiz plan: ayda 250 istek, sıfırlanma her ayın 1'i 00:00 UTC.
+
 ## Bahis kaydı
 
 Uygulamadaki **Kayıt** sekmesi: değerli bahisleri (ayrıntıda "Kayda ekle") ve iddaa kupon önerilerini kaydeder. Kâr/zarar, ROI, kazanma oranı, ortalama EV ve **CLV** (aldığınız oranın, maç başlamadan önceki son taramadaki adil olasılığa göre değeri) gösterilir. "Sonuçları güncelle" biten maçların skorlarını çekip (lig başına 2 istek) bahisleri otomatik sonuçlandırır; iddaa hokey (normal süre) bahisleri elle sonuçlandırılır. CSV dışa aktarma ve JSON yedek/geri yükleme vardır. Kayıtlar yalnızca cihazdadır.

@@ -17,6 +17,11 @@
   "max_items": 8,
   "min_remaining_quota": 100,
   "daily_budget": 10,
+  "iddaa_hours": [
+    19,
+    1
+  ],
+  "oddspapi_monthly_budget": 130,
   "notify_when_empty": false,
   "app_url": "https://6d65mn7m7j-cell.github.io/ATG/"
 }

@@ -150,6 +150,13 @@
   .actions { display: flex; gap: 6px; margin-top: 10px; }
   .actions button { flex: 1; border: 0; border-radius: 10px; padding: 9px 4px; font: inherit; font-size: 13px; font-weight: 600; background: var(--chip); color: var(--text); }
   .actions button.del { flex: .7; color: var(--bad); }
+  .autobox { padding-bottom: 6px; }
+  .autobox .field.col { gap: 8px; }
+  .autobox .sub { color: var(--muted); font-size: 12px; }
+  .autobox .btn { margin-top: 0; }
+  #autoList { padding: 0 12px 6px; display: grid; gap: 6px; }
+  #autoList .intro { margin: 2px 0; }
+  .ev-row .mini { border: 0; background: var(--accent); color: #fff; width: 30px; height: 30px; border-radius: 9px; font-size: 18px; font-weight: 700; flex: none; }
   #toast { position: fixed; left: 50%; bottom: calc(80px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px); opacity: 0;
     background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 14px; transition: .2s; pointer-events: none; z-index: 10; }
   #toast.on { opacity: 1; transform: translate(-50%, 0); }
@@ -200,6 +207,15 @@
   </section>
 
   <section id="v-iddaa" class="view">
+    <div class="group autobox">
+      <h3>Otomatik · OddsPapi</h3>
+      <div class="field col">
+        <small id="autoMeta" class="sub"></small>
+        <button class="btn" id="autoBtn" type="button">iddaa oranlarını getir</button>
+      </div>
+      <div id="autoList"></div>
+    </div>
+    <h2 class="sec">Elle giriş</h2>
     <div class="group" id="regToggle">
       <div class="field">
         <label for="iddaaReg">Uzatmalar sayılmaz · <span id="regSport">NBA</span><small>Bu ligin iddaa kuralı doğrulanmadı. Kapalı: uzatmalar dahil. NBA ve NFL'de uzatmalar sayılır, NHL'de sayılmaz.</small></label>
@@ -277,6 +293,18 @@
       <div class="field"><label for="maxStakePct">Tek bahiste en fazla (%)</label><input id="maxStakePct" type="number" inputmode="decimal" step="0.5"></div>
     </div>
 
+    <div class="group">
+      <h3>iddaa otomatik (OddsPapi)</h3>
+      <div class="field col">
+        <label for="oddspapiKey">OddsPapi anahtarı<small>Yalnızca bu cihazda saklanır. oddspapi.io'dan ücretsiz alınır (ayda 250 istek; her getirme 2 istek).</small></label>
+        <input id="oddspapiKey" class="wide" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Anahtarınızı yapıştırın">
+      </div>
+      <div class="field">
+        <label for="iddaaMbs">Varsayılan MBS<small>Otomatik oranlarda kupon önerisi için; iddaa'da maçın MBS'sini kontrol edin</small></label>
+        <select id="iddaaMbs"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+      </div>
+    </div>
+
     <div class="group" id="booksGroup">
       <h3>Bahis şirketlerim</h3>
       <div class="field"><label><small>Hiçbiri seçili değilse tüm şirketler gösterilir. Liste ilk taramadan sonra dolar.</small></label></div>
@@ -302,6 +330,6 @@
 </nav>
 
 <div id="toast" role="status" aria-live="polite"></div>
-<script type="module" src="main.js?v=10"></script>
+<script type="module" src="main.js?v=11"></script>
 </body>
 </html>

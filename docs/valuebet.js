@@ -668,3 +668,81 @@ export function betClv(bet) {
   if (!bet.legs.every((l) => l.close_prob)) return null;
   return r(bet.legs.reduce((x, l) => x * l.odds * l.close_prob, 1) - 1);
 }
+
+// ================================================================ OddsPapi: otomatik iddaa ↔ Pinnacle
+// OddsPapi'de market kimlikleri tüm şirketlerde aynıdır (aynı market tipi, süre ve çizgi). Bu yüzden iddaa'nın
+// her ana marketi Pinnacle'ın aynı kimlikli marketiyle doğrudan karşılaştırılır; çizgi düzeltmesi ya da model
+// gerekmez. "result" = uzatmalar dahil, "fulltime" = normal süre (NHL'de iddaa MS 1-X-2 normal süredir).
+// participant1 ev sahibidir; handikap çizgisi ev sahibine uygulanır.
+const OP_MARKET = { moneyline: "h2h", "1x2": "h2h", spreads: "spreads", totals: "totals" };
+const OP_SIDE = { 1: "home", 2: "away", X: "draw", Over: "over", Under: "under" };
+const opPrice = (mk, oid) => {
+  const p = mk?.outcomes?.[oid]?.players?.["0"];
+  return p && p.active !== false && Number(p.price) > 1 ? Number(p.price) : null;
+};
+function opLabel(def) {
+  const per = def.p === "fulltime" ? "normal süre" : "uzt. dahil";
+  return { h2h: `Maç Sonucu (${per})`, spreads: `Handikap (${per})`, totals: `Alt/Üst (${per})` }[OP_MARKET[def.t]];
+}
+
+/**
+ * iddaa ve Pinnacle odds-by-tournaments yanıtlarını karşılaştırır. Tüm ortak marketlerin tüm sonuçlarını döndürür
+ * (eşik filtresi çağıranda). meta: docs/oddspapi_meta.json. options: DEFAULTS + { mbs }.
+ */
+export function evaluateOddspapi(iddaaFixtures, pinFixtures, meta, options = {}) {
+  const cfg = { ...DEFAULTS, ...options };
+  const pin = new Map((pinFixtures || []).map((f) => [f.fixtureId, f.bookmakerOdds?.pinnacle]));
+  const rows = [];
+  const margins = [];
+  for (const f of iddaaFixtures || []) {
+    const sport = meta.tournaments[String(f.tournamentId)];
+    if (!sport || (f.statusId != null && f.statusId !== 0)) continue; // yalnızca başlamamış maçlar
+    const ib = f.bookmakerOdds?.iddaa, pb = pin.get(f.fixtureId);
+    if (!ib || !pb || ib.suspended || pb.suspended) continue;
+    const H = meta.participants[String(f.participant1Id)] || "Ev sahibi";
+    const A = meta.participants[String(f.participant2Id)] || "Deplasman";
+    for (const [mid, mk] of Object.entries(ib.markets || {})) {
+      const def = meta.markets[mid], pmk = pb.markets?.[mid];
+      if (!def || !pmk || mk.marketActive === false || pmk.marketActive === false) continue;
+      const oids = Object.keys(def.o);
+      const pp = oids.map((o) => opPrice(pmk, o));
+      if (pp.some((x) => x == null)) continue;
+      const fair = devig(pp, cfg.devigMethod);
+      const ip = oids.map((o) => opPrice(mk, o));
+      if (ip.every((x) => x != null)) margins.push(ip.reduce((s, x) => s + 1 / x, 0) - 1);
+      const market = OP_MARKET[def.t], h = Number(def.h) || 0;
+      const fmt = (x) => (x > 0 ? "+" : "") + x;
+      oids.forEach((oid, i) => {
+        const odds = ip[i];
+        if (odds == null) return;
+        const name = def.o[oid], side = OP_SIDE[name];
+        if (!side) return;
+        const label = market === "h2h"
+          ? { home: `1 · ${H}`, draw: "X · Beraberlik", away: `2 · ${A}` }[side]
+          : market === "spreads"
+            ? side === "home" ? `${H} (${fmt(h)})` : `${A} (${fmt(-h)})`
+            : `${side === "over" ? "Üst" : "Alt"} ${h}`;
+        rows.push({
+          source: "oddspapi", sport, event_id: f.fixtureId, home: H, away: A, match: `${H} – ${A}`,
+          commence_time: f.startTime, market, market_label: opLabel(def), market_id: mid, outcome_id: oid,
+          side, line: market === "h2h" ? null : h, label, odds, fair_probability: r(fair[i]), fair_odds: r(1 / fair[i], 3),
+          pinnacle_odds: pp[i], edge: r(fair[i] * odds - 1), reference: "sharp", reference_books: ["pinnacle"],
+          regulation: def.p === "fulltime", model: false, mbs: Number(cfg.mbs) || 1,
+        });
+      });
+    }
+  }
+  rows.sort((a, b) => b.edge - a.edge);
+  const avgMargin = margins.length ? r(margins.reduce((a, b) => a + b, 0) / margins.length) : null;
+  return { rows, markets: margins.length, fixtures: new Set(rows.map((x) => x.event_id)).size, avgMargin };
+}
+
+/** OddsPapi satırından kayıt ayağı (sonuç: uzatmalı olanlar skorla, normal süre olanlar elle). */
+export function legFromOddspapi(x) {
+  return {
+    sport: x.sport, event_id: x.event_id, commence_time: x.commence_time, home: x.home, away: x.away,
+    market: x.market, market_label: x.market_label, side: x.side, line: x.line, label: x.label, odds: x.odds,
+    source: "oddspapi", bookmaker: "iddaa", regulation: x.regulation, fair_prob: x.fair_probability,
+    close_prob: null, status: "pending", market_id: x.market_id, outcome_id: x.outcome_id,
+  };
+}

@@ -43,6 +43,7 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
         run: python scripts/scan_notify.py ${{ inputs.test && '--test-notify' || '' }}
       - name: Bildirilenleri kaydet
         if: always() && hashFiles('.notify_state.json') != ''

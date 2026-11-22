@@ -30,6 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from valuebet.finder import FinderConfig, ValueBet, find_value_bets  # noqa: E402
+from valuebet import oddspapi  # noqa: E402
 from valuebet.providers import SPORT_MARKETS, SPORTS, SampleProvider  # noqa: E402
 
 API = "https://api.the-odds-api.com/v4"
@@ -49,6 +50,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "max_items": 8,
     "min_remaining_quota": 100,
     "daily_budget": 10,
+    "iddaa_hours": [19, 1],
+    "oddspapi_monthly_budget": 130,
     "notify_when_empty": False,
     "app_url": "https://6d65mn7m7j-cell.github.io/ATG/",
 }
@@ -102,26 +105,43 @@ def bet_key(b: ValueBet) -> str:
     return f"{b.event_id}|{b.market}|{b.selection}|{b.point}|{b.bookmaker}|{b.price}"
 
 
-def format_message(found: list[tuple[str, ValueBet]], cfg: dict[str, Any], remaining: int | None) -> dict[str, Any]:
+def iddaa_key(x: dict[str, Any]) -> str:
+    return f"op|{x['event_id']}|{x['market_id']}|{x['outcome_id']}|{x['odds']}"
+
+
+def format_message(found: list[tuple[str, ValueBet]], cfg: dict[str, Any], remaining: int | None,
+                   iddaa_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     found = sorted(found, key=lambda x: x[1].edge, reverse=True)
-    shown = found[: cfg["max_items"]]
-    sports = sorted({SPORT_NAMES[s] for s, _ in found})
+    iddaa_rows = sorted(iddaa_rows or [], key=lambda x: x["edge"], reverse=True)
+    shown_i = iddaa_rows[: cfg["max_items"]]
+    shown = found[: max(cfg["max_items"] - len(shown_i), 0)]
+    sports = sorted({SPORT_NAMES[s] for s, _ in found} | {SPORT_NAMES[x["sport"]] for x in iddaa_rows})
     lines = []
+    for x in shown_i:
+        t = datetime.fromisoformat(x["commence_time"].replace("Z", "+00:00")).astimezone(TR)
+        warn = " ⚠️ kontrol edin" if x["edge"] > cfg["max_edge"] else ""
+        lines.append(
+            f"iddaa · {SPORT_NAMES[x['sport']]} {t:%d.%m %H:%M} · {x['match']}\n"
+            f"  {x['label']} ({x['market_label']}) @ {x['odds']:.2f} · Pinnacle {x['pinnacle_odds']:.2f} · EV +{x['edge'] * 100:.1f}%{warn}"
+        )
     for sport, b in shown:
         t = datetime.fromisoformat(b.commence_time.replace("Z", "+00:00")).astimezone(timezone(timedelta(hours=3)))
         lines.append(
             f"{SPORT_NAMES[sport]} {t:%d.%m %H:%M} · {b.home_team} – {b.away_team}\n"
             f"  {b.label} ({b.market_label}) @ {b.price:.2f} {b.bookmaker_title} · EV +{b.edge * 100:.1f}% · stake {b.stake:.0f}"
         )
-    if len(found) > len(shown):
-        lines.append(f"…ve {len(found) - len(shown)} bahis daha")
+    hidden = len(found) - len(shown) + len(iddaa_rows) - len(shown_i)
+    if hidden > 0:
+        lines.append(f"…ve {hidden} bahis daha")
     if remaining is not None:
         lines.append(f"Kalan API isteği: {remaining}")
+    total = len(found) + len(iddaa_rows)
+    best = max([b.edge for _, b in found] + [x["edge"] for x in iddaa_rows], default=0)
     return {
-        "title": f"{len(found)} değerli bahis · {', '.join(sports)}",
+        "title": f"{total} değerli bahis{f' (iddaa {len(iddaa_rows)})' if iddaa_rows else ''} · {', '.join(sports)}",
         "message": "\n".join(lines),
         "tags": ["moneybag"],
-        "priority": 4 if found and found[0][1].edge >= 0.05 else 3,
+        "priority": 4 if best >= 0.05 else 3,
         "click": cfg["app_url"],
     }
 
@@ -234,14 +254,40 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{SPORT_NAMES[sport]}: {len(odds)} maç, {len(bets)} değerli bahis")
             found += [(sport, b) for b in bets]
 
+    # iddaa (OddsPapi): belirli saatlerde, aylık bütçe içinde, 2 istek
+    iddaa_found: list[dict[str, Any]] = []
+    op_key = os.environ.get("ODDSPAPI_KEY", "").strip()
+    month = datetime.now(TR).strftime("%Y-%m")
+    op_usage = raw.get("oddspapi") if isinstance(raw.get("oddspapi"), dict) and raw["oddspapi"].get("month") == month else {"month": month, "used": 0}
+    if args.demo:
+        pass
+    elif not op_key:
+        print("iddaa: ODDSPAPI_KEY tanımlı değil, atlandı.")
+    elif datetime.now(TR).hour not in cfg["iddaa_hours"] and not os.environ.get("IDDAA_FORCE"):
+        print(f"iddaa: bu saat ({datetime.now(TR):%H}:xx) iddaa tarama saati değil ({cfg['iddaa_hours']}).")
+    elif op_usage["used"] + 2 > cfg["oddspapi_monthly_budget"]:
+        print(f"iddaa: aylık OddsPapi bütçesi doldu ({op_usage['used']}/{cfg['oddspapi_monthly_budget']}).")
+    else:
+        try:
+            meta = oddspapi.load_meta()
+            idd, pin = oddspapi.fetch(op_key, meta)
+            op_usage["used"] += 2
+            res = oddspapi.evaluate(idd, pin, meta, mbs=1)
+            iddaa_found = [x for x in res["rows"] if x["edge"] >= cfg["min_edge"] and cfg["min_odds"] <= x["odds"] <= cfg["max_odds"]]
+            print(f"iddaa: {res['fixtures']} maç, {res['markets']} market, ort. marj %{(res['avg_margin'] or 0) * 100:.1f}, "
+                  f"{len(iddaa_found)} değerli oran · bu ay {op_usage['used']}/{cfg['oddspapi_monthly_budget']} OddsPapi isteği")
+        except oddspapi.OddsPapiError as exc:
+            print(f"iddaa: {exc}")
+    new_iddaa = [x for x in iddaa_found if iddaa_key(x) not in seen]
+
     new = [(s, b) for s, b in found if bet_key(b) not in seen]
     print(f"Toplam {len(found)} değerli bahis, {len(new)} yeni. Bu çalışmada harcanan istek: {client.used_now if client else 0}"
           f" · bugün toplam {usage['used']}/{cfg['daily_budget']}")
 
     remaining = client.remaining if client else None
     payload = None
-    if new:
-        payload = format_message(new, cfg, remaining)
+    if new or new_iddaa:
+        payload = format_message(new, cfg, remaining, new_iddaa)
     elif cfg["notify_when_empty"]:
         payload = {"title": "Değerli bahis yok", "message": f"Kalan API isteği: {remaining}", "tags": ["zzz"], "priority": 2, "click": cfg["app_url"]}
     if remaining is not None and remaining < cfg["min_remaining_quota"] and not usage.get("warned"):
@@ -263,8 +309,10 @@ def main(argv: list[str] | None = None) -> int:
         # Başlamış maçların kayıtlarını at, yenileri ekle.
         for s, b in new:
             seen[bet_key(b)] = b.commence_time
+        for x in new_iddaa:
+            seen[iddaa_key(x)] = x["commence_time"].replace(".000Z", "Z")
         seen = {k: v for k, v in seen.items() if v > iso(now - timedelta(hours=6))}
-        state_path.write_text(json.dumps({"seen": seen, "usage": usage}))
+        state_path.write_text(json.dumps({"seen": seen, "usage": usage, "oddspapi": op_usage}))
     return 0
 
 
