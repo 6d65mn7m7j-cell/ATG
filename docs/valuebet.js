@@ -554,14 +554,15 @@ export function evaluateIddaaRegulation(event, entry, options = {}) {
 
 /**
  * Spora ve kurala göre doğru iddaa değerlendiricisini seçer.
- * options.regulation = true (varsayılan): uzatmalar sayılmaz (normal süre). false: uzatmalar dahil (basketbol/NFL).
- * Hokey her zaman normal süredir.
+ * Hokey her zaman normal süredir (iddaa'da uzatma sayılmaz).
+ * Basketbol/NFL varsayılan: uzatmalar dahil (iddaa NBA'de uzatmalar sayılır). Normal süre için
+ * options.regulation = true ya da lig bazında options.regulationBySport = { nfl: true, ... }.
  */
 export function evaluateIddaaAny(event, entry, options = {}) {
   const sp = sportOf(event);
   if (sp.model === "hockey") return evaluateIddaaHockey(event, entry, options);
-  if (options.regulation !== false) return evaluateIddaaRegulation(event, entry, options);
-  return evaluateIddaa(event, entry, options);
+  const reg = options.regulation ?? !!options.regulationBySport?.[sp.id];
+  return reg ? evaluateIddaaRegulation(event, entry, options) : evaluateIddaa(event, entry, options);
 }
 
 // ================================================================ bahis kaydı

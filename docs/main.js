@@ -1,7 +1,7 @@
 import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
-} from "./valuebet.js?v=7";
+} from "./valuebet.js?v=8";
 
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
 const $ = (s) => document.querySelector(s);
@@ -28,9 +28,12 @@ const settings = {
   minEdge: DEFAULTS.minEdge * 100, reference: DEFAULTS.reference, devigMethod: DEFAULTS.devigMethod,
   minOdds: DEFAULTS.minOdds, maxOdds: DEFAULTS.maxOdds, bankroll: DEFAULTS.bankroll,
   kellyMultiplier: String(DEFAULTS.kellyMultiplier), maxStakePct: DEFAULTS.maxStakePct * 100,
-  books: [], market: "all", sport: "nba", iddaaRegulation: true,
+  books: [], market: "all", sport: "nba",
   ...store.get("settings", {}),
 };
+// Lig bazında iddaa uzatma kuralı (true = uzatmalar sayılmaz). NBA/EuroLeague'de iddaa uzatmaları sayar.
+settings.iddaaRegBySport = { nba: false, euroleague: false, nfl: false, ...(settings.iddaaRegBySport || {}) };
+delete settings.iddaaRegulation; // önceki sürümün tek (yanlış varsayılanlı) ayarı
 // Her spor için ayrı son tarama: { events, fetchedAt, source, quota }
 const snapshots = Object.fromEntries(Object.keys(SPORTS).map((k) => [k, store.get("snapshot_" + k, k === "nba" ? store.get("snapshot", null) : null)]));
 if (!SPORTS[settings.sport]) settings.sport = "nba";
@@ -111,7 +114,7 @@ function engineOptions() {
     bankroll: Number(settings.bankroll) || 0,
     kellyMultiplier: Number(settings.kellyMultiplier),
     maxStakePct: (Number(settings.maxStakePct) || 0) / 100,
-    regulation: settings.iddaaRegulation !== false,
+    regulationBySport: settings.iddaaRegBySport,
   };
 }
 
@@ -228,14 +231,15 @@ const get = (o, path) => path.split(".").reduce((x, k) => x?.[k], o);
 function renderGames() {
   const box = $("#games");
   const hockeySport = SPORTS[settings.sport].model === "hockey";
-  const reg = hockeySport || settings.iddaaRegulation !== false;
+  const reg = hockeySport || !!settings.iddaaRegBySport[settings.sport];
   $("#regToggle").hidden = hockeySport;
-  $("#iddaaReg").checked = settings.iddaaRegulation !== false;
+  $("#iddaaReg").checked = reg;
+  $("#regSport").textContent = SPORTS[settings.sport].name;
   $("#iddaaIntro").textContent = hockeySport
     ? "iddaa'da buz hokeyi bahisleri normal süre (60 dk) sonucuna göredir: MS ve handikap 1-X-2, alt/üst normal süre golleri. Adil oranlar Pinnacle'ın uzatmalar dahil oranlarından Poisson gol modeliyle türetilir. Handikapta ev sahibinin gol handikabını girin (ör. -1 ya da -1,5). Ondalık için virgül kullanabilirsiniz."
     : reg
       ? `Uzatmalar sayılmaz: MS 1-X-2 (X = normal sürede beraberlik), handikap ve alt/üst normal süre skoruna göre. Adil oranlar Pinnacle'ın uzatmalar dahil oranlarından normal süre modeliyle türetilir (${SPORTS[settings.sport].name}'de maçların ~%${Math.round(SPORTS[settings.sport].reg.tieRate * 100)}'ı uzatmaya gider). Handikapta ev sahibinin çizgisini girin; tam sayı çizgide X de girilebilir. Ondalık için virgül kullanabilirsiniz.`
-      : "Uzatmalar dahil: MS iki yönlü. Oranlar Pinnacle'ın marjsız oranıyla karşılaştırılır; çizgi farklıysa (ör. iddaa -2.5, referans -3.5) adil olasılık istatistiksel olarak düzeltilir. Ondalık için virgül kullanabilirsiniz.";
+      : "Uzatmalar dahil (iddaa NBA kuralı): MS iki yönlü, handikap ve alt/üst uzatmalar dahil. Oranlar Pinnacle'ın marjsız oranıyla karşılaştırılır; çizgi farklıysa (ör. iddaa -2.5, referans -3.5) adil olasılık istatistiksel olarak düzeltilir. Ondalık için virgül kullanabilirsiniz.";
   if (!snapshot) {
     box.innerHTML = `<div class="empty"><b>Önce oranları tarayın</b>Karşılaştırma için Pinnacle oranları gerekir.<button class="btn" data-refresh>Şimdi tara</button></div>`;
     renderCoupons([]);
@@ -527,7 +531,7 @@ $("#restoreFile").addEventListener("change", async (e) => {
 });
 
 $("#iddaaReg").addEventListener("change", (e) => {
-  settings.iddaaRegulation = e.target.checked; saveSettings(); renderGames();
+  settings.iddaaRegBySport[settings.sport] = e.target.checked; saveSettings(); renderGames();
 });
 
 // ------------------------------------------------------------ olaylar
