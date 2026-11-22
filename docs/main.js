@@ -1,7 +1,7 @@
 import {
   findValueBets, summarize, listBookmakers, DEFAULTS, evaluateIddaaAny, buildCoupons, SPORTS, sportOf,
   legFromBet, legFromIddaa, currentFairProb, settleLeg, betOutcome, ledgerStats, betClv,
-} from "./valuebet.js?v=5";
+} from "./valuebet.js?v=6";
 
 const API = (sport) => `https://api.the-odds-api.com/v4/sports/${SPORTS[sport].key}/odds`;
 const $ = (s) => document.querySelector(s);

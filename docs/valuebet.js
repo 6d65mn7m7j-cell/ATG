@@ -66,9 +66,21 @@ function lineId(market, outcomes, home) {
   return String(Number(h.point));
 }
 
+// NHL'de bazı Avrupa şirketleri alt/üst ve handikabı uzatmasız fiyatlar (Pinnacle uzatmayı sayar) -> sahte değer.
+// Hokeyde handikap/toplam yalnızca uzatmayı saydığı bilinen şirketler arasında karşılaştırılır.
+export const HOCKEY_OT_BOOKS = new Set([
+  "pinnacle", "betonlineag", "lowvig", "bovada", "betus", "mybookieag", "gtbets", "everygame", "betanysports",
+  "draftkings", "fanduel", "betmgm", "betrivers", "williamhill_us", "espnbet", "fanatics", "ballybet", "betparx",
+  "hardrockbet", "fliff", "circasports", "superbook", "unibet_us", "windcreek", "betfair_ex_eu", "betfair_ex_uk",
+  "matchbook", "smarkets", "sport888", "williamhill",
+]);
+const bookAllowed = (event, market, key) =>
+  market === "h2h" || !String(event.sport_key || "").startsWith("icehockey") || HOCKEY_OT_BOOKS.has(key);
+
 function collectLines(event, market) {
   const groups = new Map();
   for (const book of event.bookmakers || []) {
+    if (!bookAllowed(event, market, book.key)) continue;
     for (const m of book.markets || []) {
       if (m.key !== market) continue;
       const outs = m.outcomes || [];

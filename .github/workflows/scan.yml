@@ -1,0 +1,43 @@
+name: Değerli bahis taraması
+
+on:
+  schedule:
+    # Her gün 15:07 UTC = 18:07 Türkiye. Önümüzdeki 14 saati tarar (EuroLeague akşam maçları,
+    # NFL pazar maçları, NBA/NHL gece maçları). Kotayı korumak için tek çalıştırma.
+    - cron: "7 15 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: value-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "httpx>=0.27"
+      - name: Önceki bildirimleri yükle
+        uses: actions/cache/restore@v4
+        with:
+          path: .notify_state.json
+          key: notify-state-${{ github.run_id }}
+          restore-keys: notify-state-
+      - name: Tara ve bildir
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python scripts/scan_notify.py
+      - name: Bildirilenleri kaydet
+        if: always() && hashFiles('.notify_state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .notify_state.json
+          key: notify-state-${{ github.run_id }}

@@ -106,3 +106,38 @@ def test_hockey_market_labels():
     ev["sport_key"] = "icehockey_nhl"
     b = find_value_bets([ev], FinderConfig(min_edge=0.01))[0]
     assert b.market_label == "Maç Sonucu (uzt. dahil)"
+
+
+def test_hockey_totals_ignore_regulation_time_books():
+    ev = event(
+        book("pinnacle", total=(6.5, 2.00, 1.88)),
+        book("coolbet", total=(6.5, 2.30, 1.62)),  # normal süre fiyatı -> karşılaştırılmamalı
+        book("draftkings", total=(6.5, 2.12, 1.75)),
+    )
+    ev["sport_key"] = "icehockey_nhl"
+    bets = find_value_bets([ev], FinderConfig(min_edge=0.0, markets=("totals",)))
+    assert "coolbet" not in {b.bookmaker for b in bets}
+    assert "draftkings" in {b.bookmaker for b in bets}
+    ev["sport_key"] = "basketball_nba"  # basketbolda kısıt yok
+    assert "coolbet" in {b.bookmaker for b in find_value_bets([ev], FinderConfig(min_edge=0.0, markets=("totals",)))}
+
+
+def test_scan_notify_dry_run(tmp_path, capsys):
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("scan_notify", Path(__file__).parent.parent / "scripts" / "scan_notify.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    state = tmp_path / "state.json"
+    assert mod.main(["--demo", "--dry-run", "--state", str(state)]) == 0
+    out = capsys.readouterr().out
+    assert "değerli bahis · NBA" in out and "EV +" in out
+    assert not state.exists()  # kuru çalıştırma durum yazmaz
+    # gerçek çalıştırma (NTFY_TOPIC yok -> gönderilmez) durumu yazar, ikinci çalıştırma yeni bahis bulmaz
+    import os
+    os.environ.pop("NTFY_TOPIC", None)
+    mod.main(["--demo", "--state", str(state)])
+    capsys.readouterr()
+    mod.main(["--demo", "--dry-run", "--state", str(state)])
+    assert ", 0 yeni" in capsys.readouterr().out

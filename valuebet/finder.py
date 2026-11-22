@@ -132,9 +132,28 @@ def _line_id(market: str, outcomes: list[dict[str, Any]], home_team: str) -> flo
     return None
 
 
+# NHL'de bazı Avrupa şirketleri alt/üst ve handikabı uzatmasız (normal süre) fiyatlar; Pinnacle ve ABD
+# şirketleri uzatmayı da sayar. Karışırsa sahte "değer" çıkar (ör. Üst 6.5'te sistematik ~6 puan fark).
+# Bu yüzden hokeyde handikap/toplam yalnızca uzatmayı saydığı bilinen şirketler arasında karşılaştırılır.
+HOCKEY_OT_BOOKS = frozenset({
+    "pinnacle", "betonlineag", "lowvig", "bovada", "betus", "mybookieag", "gtbets", "everygame", "betanysports",
+    "draftkings", "fanduel", "betmgm", "betrivers", "williamhill_us", "espnbet", "fanatics", "ballybet", "betparx",
+    "hardrockbet", "fliff", "circasports", "superbook", "unibet_us", "windcreek", "betfair_ex_eu", "betfair_ex_uk",
+    "matchbook", "smarkets", "sport888", "williamhill",
+})
+
+
+def _book_allowed(event: dict[str, Any], market: str, book_key: str) -> bool:
+    if market != "h2h" and str(event.get("sport_key", "")).startswith("icehockey"):
+        return book_key in HOCKEY_OT_BOOKS
+    return True
+
+
 def _collect_lines(event: dict[str, Any], market: str) -> dict[float | None, list[_BookLine]]:
     groups: dict[float | None, list[_BookLine]] = {}
     for book in event.get("bookmakers", []):
+        if not _book_allowed(event, market, book["key"]):
+            continue
         for m in book.get("markets", []):
             if m.get("key") != market:
                 continue

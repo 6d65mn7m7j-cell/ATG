@@ -1,6 +1,6 @@
-# NBA & NHL Değerli Bahis Bulucu
+# Değerli Bahis Bulucu (NBA · NHL · EuroLeague · NFL)
 
-NBA ve NHL maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif beklenen değerli (+EV)** bahisleri bulan uygulama. Web arayüzü, REST API ve komut satırı aracı içerir.
+NBA, NHL, EuroLeague ve NFL maçlarında bahis şirketlerinin oranlarını karşılaştırıp **pozitif beklenen değerli (+EV)** bahisleri bulan uygulama. Web arayüzü, REST API ve komut satırı aracı içerir.
 
 ## Nasıl çalışır?
 
@@ -21,6 +21,21 @@ NBA ve NHL maçlarında bahis şirketlerinin oranlarını karşılaştırıp **p
 - **iddaa sekmesi:** iddaa'da gördüğünüz oranları (maç sonucu, handikap, alt/üst) ve maçın MBS değerini elle girersiniz. Oranlar Pinnacle'ın marjsız oranıyla karşılaştırılır; iddaa çizgisi farklıysa adil olasılık normal dağılım modeliyle (fark σ≈12.5, toplam σ≈18.5) düzeltilir. MBS kuralına uyan ve her maçtan tek seçim içeren pozitif EV'li kuponlar, beklenen log büyümesine göre sıralanarak önerilir. Girişler yalnızca cihazda saklanır.
 - **NHL:** Üstteki NBA/NHL düğmesiyle spor değiştirilir; her spor için son tarama ayrı saklanır. iddaa'da buz hokeyi normal süreye (60 dk) göre oynandığı için NHL kartında MS ve handikap 1-X-2, alt/üst normal süre golleri olarak girilir. Adil olasılıklar, Pinnacle'ın uzatmalar dahil maç sonucu ve toplam gol oranlarına uydurulan bir Poisson gol modelinden türetilir (normal sürede beraberlik NHL gerçeğine göre ~%21-23'e kalibre edilir, uzatma/penaltı yazı-tura ve toplam gole +1 sayılır). NBA ve NHL girişleri aynı kuponda birleştirilebilir.
 - Yerelde deneme: `python -m http.server -d docs 8080`
+
+## Bahis kaydı
+
+Uygulamadaki **Kayıt** sekmesi: değerli bahisleri (ayrıntıda "Kayda ekle") ve iddaa kupon önerilerini kaydeder. Kâr/zarar, ROI, kazanma oranı, ortalama EV ve **CLV** (aldığınız oranın, maç başlamadan önceki son taramadaki adil olasılığa göre değeri) gösterilir. "Sonuçları güncelle" biten maçların skorlarını çekip (lig başına 2 istek) bahisleri otomatik sonuçlandırır; iddaa hokey (normal süre) bahisleri elle sonuçlandırılır. CSV dışa aktarma ve JSON yedek/geri yükleme vardır. Kayıtlar yalnızca cihazdadır.
+
+## Zamanlanmış tarama ve bildirim
+
+`.github/workflows/scan.yml` her gün 18:07 (TR) `scripts/scan_notify.py`'yi çalıştırır; değerli bahis bulursa [ntfy](https://ntfy.sh) ile telefona bildirim gönderir. Aynı bahis iki kez bildirilmez.
+
+- Gerekli repo gizli değerleri (Settings → Secrets and variables → Actions): `ODDS_API_KEY`, `NTFY_TOPIC`.
+- Ayarlar `notify.json`'da: ligler, bölge (`eu` = lig başına 3 istek), kaç saat ilerisi, en düşük EV, oran aralığı, şirket filtresi, kota alt sınırı.
+- Kota: maç listesi ücretsiz `/events` uç noktasından alınır; önümüzdeki saatlerde maçı olmayan lige istek harcanmaz. Kabaca ayda ~250 istek.
+- Elle çalıştırma: Actions → "Değerli bahis taraması" → Run workflow. Yerel deneme: `python scripts/scan_notify.py --demo --dry-run`.
+
+**NHL notu:** Bazı Avrupa şirketleri hokey alt/üst ve handikabını uzatmasız fiyatlar; Pinnacle uzatmayı sayar. Karışmasın diye hokeyde handikap/toplam yalnızca uzatmayı saydığı bilinen şirketler arasında karşılaştırılır (`HOCKEY_OT_BOOKS`).
 
 ## Kurulum
 
